@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ad-hoc schema comparison</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.pair{grid-template-columns:1fr}}
+  textarea{width:100%;height:190px;font-family:var(--mono);font-size:12.5px;line-height:1.55;
+    padding:11px 12px;color:var(--ink);background:var(--paper);border:1px solid var(--rule);
+    border-radius:4px;resize:vertical;white-space:pre;overflow:auto}
+  .panel{background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:20px 22px;margin-bottom:14px}
+  .entry{border:1px solid var(--rule);border-radius:6px;padding:16px 18px;margin-bottom:12px;background:var(--paper)}
+  .entry-top{display:flex;align-items:flex-end;gap:14px;margin-bottom:12px}
+  .entry-top>div:first-child{flex:1}
+  .drop{background:none;border:0;color:var(--del-ink);font-size:13px;padding:6px 4px;cursor:pointer;text-decoration:underline}
+  .controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+  .hint{font-size:12.5px;color:var(--muted);margin:7px 0 0}
+  #report{display:none} #report.on{display:block}
+  .cover{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:18px}
+  table.idx{width:100%;border-collapse:collapse;font-size:13.5px}
+  table.idx th{text-align:left;font-weight:600;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--rule);padding:0 10px 6px 0}
+  table.idx td{padding:7px 10px 7px 0;border-bottom:1px solid var(--rule);vertical-align:top;word-break:break-all}
+  table.idx td.n{text-align:right;white-space:nowrap;width:70px}
+  .g{color:var(--add-ink)} .r{color:var(--del-ink)}
+  .sec{margin-top:24px;border-top:1px solid var(--rule);padding-top:14px}
+  .sec h3{font-size:15.5px;margin:0 0 3px;word-break:break-all}
+  .sec .sub{font-size:12.5px;color:var(--muted);margin:0 0 10px}
+  @media print{ .sec{page-break-before:always;border-top:0;padding-top:0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="noprint">
+    <h1>Ad-hoc schema comparison</h1>
+    <p class="lede">For one-off checks against markup that isn’t in the tracker yet.
+      Anything you want to keep a record of belongs in
+      <a href="../index.html">the dashboard</a> instead.</p>
+
+    <div class="panel">
+      <div class="controls">
+        <div style="flex:1;min-width:190px"><label for="f-why">Reason for this batch</label>
+          <input type="text" id="f-why" placeholder="Pre-launch check, client request…"></div>
+        <div><label for="f-date">Date</label><input type="date" id="f-date"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <details class="fold" id="imp" open>
+        <summary>Import from a spreadsheet</summary>
+        <div class="inner">
+          <p class="hint" style="margin:0 0 10px">Three columns: <b>URL</b>, <b>Previous schema</b>,
+            <b>Current schema</b>. Either upload a CSV, or select the cells in Google Sheets,
+            copy, and paste below. A header row is detected automatically.</p>
+          <div class="controls" style="margin-bottom:10px">
+            <input type="file" id="file" accept=".csv,.tsv,.txt" style="width:auto;border:0;padding:0">
+            <span class="count">Separator</span>
+            <select id="delim" style="width:auto">
+              <option value="auto" selected>Auto</option>
+              <option value=",">Comma</option>
+              <option value="&#9;">Tab</option>
+            </select>
+            <span class="spacer"></span>
+            <button class="mini" id="tpl" type="button">Download template</button>
+          </div>
+          <textarea id="paste" spellcheck="false" style="height:130px"
+            placeholder="Or paste rows copied from your spreadsheet here"></textarea>
+          <div class="controls" style="margin-top:10px">
+            <button class="primary" id="load" type="button">Load rows</button>
+            <span class="count" id="impmsg"></span>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div id="entries"></div>
+
+    <div class="panel">
+      <div class="controls">
+        <button id="add" type="button">Add another page</button>
+        <button class="primary" id="go" type="button">Compare all</button>
+        <label class="count" for="opt-detail">Detail
+          <select id="opt-detail" style="width:auto">
+            <option value="changes">Changed parts only</option>
+            <option value="appendix" selected>Changes, full code in appendix</option>
+            <option value="full">Full code throughout</option>
+          </select>
+        </label>
+        <span class="spacer"></span>
+        <button id="print" type="button">Save as PDF</button>
+      </div>
+      <p class="hint">The PDF prints landscape so both columns stay readable.</p>
+    </div>
+  </div>
+
+  <div id="report">
+    <div class="cover"><h1 style="font-size:20px">Schema comparison</h1>
+      <div id="facts" class="count"></div></div>
+    <div id="body"></div>
+  </div>
+
+</div>
+
+<script src="../assets/diff.js"></script>
+<script>
+(function(){
+  const D = window.SchemaDiff, $ = id => document.getElementById(id), esc = D.esc;
+  $('f-date').value = new Date().toISOString().slice(0,10);
+
+  let seq = 0;
+  function addEntry(url, prev, cur){
+    seq++;
+    const el = document.createElement('div');
+    el.className = 'entry';
+    el.innerHTML =
+      '<div class="entry-top"><div><label>Page URL</label>'+
+      '<input type="text" class="u" placeholder="https://llmsource.com/"></div>'+
+      '<button class="drop" type="button">Remove</button></div>'+
+      '<div class="pair">'+
+      '<div><label>Previous version</label><textarea class="o" spellcheck="false"></textarea></div>'+
+      '<div><label>Current version</label><textarea class="w" spellcheck="false"></textarea></div>'+
+      '</div><p class="hint">Script tags are stripped automatically.</p>';
+    if(url)  el.querySelector('.u').value = url;
+    if(prev) el.querySelector('.o').value = prev;
+    if(cur)  el.querySelector('.w').value = cur;
+    el.querySelector('.drop').addEventListener('click', () => {
+      if(document.querySelectorAll('.entry').length > 1){ el.remove(); tidy(); }
+    });
+    $('entries').appendChild(el); tidy();
+  }
+  const tidy = () => document.querySelectorAll('.entry .drop').forEach(b => {
+    b.style.visibility = document.querySelectorAll('.entry').length === 1 ? 'hidden' : 'visible';
+  });
+  addEntry();
+
+  function render(){
+    const detail = $('opt-detail').value;
+    $('report').classList.add('on');
+    $('facts').textContent = ($('f-date').value || '') + ' · ' + ($('f-why').value || 'No reason given');
+
+    const rows = [];
+    document.querySelectorAll('.entry').forEach((e,i) => {
+      const o = e.querySelector('.o').value, w = e.querySelector('.w').value;
+      if(o.trim() || w.trim())
+        rows.push({label: e.querySelector('.u').value.trim() || ('Page '+(i+1)), o:o, w:w});
+    });
+    if(!rows.length){ $('body').innerHTML = '<div class="err">Paste at least one pair.</div>'; return; }
+
+    const res = rows.map(r => {
+      const c = D.compare(r.o, r.w, {full: detail === 'full', sort:true, context:3});
+      return Object.assign({label:r.label, raw:r}, c);
+    });
+
+    let h = '<table class="idx"><tr><th>Page</th><th class="n">Added</th><th class="n">Removed</th></tr>';
+    res.forEach(r => {
+      h += '<tr><td>'+esc(r.label)+'</td>' + (r.error
+        ? '<td class="n r" colspan="2">invalid JSON</td></tr>'
+        : '<td class="n g">'+(r.add||'—')+'</td><td class="n r">'+(r.del||'—')+'</td></tr>');
+    });
+    h += '</table>';
+
+    res.forEach(r => {
+      h += '<div class="sec"><h3>'+esc(r.label)+'</h3>';
+      if(r.error){ h += '<div class="err">'+esc(r.error)+'</div></div>'; return; }
+      if(!r.add && !r.del){ h += '<p class="sub">No change</p></div>'; return; }
+      h += '<p class="sub">'+r.add+' added, '+r.del+' removed · '+esc(r.summary.join('; '))+'</p>';
+      h += r.html + '</div>';
+    });
+
+    if(detail === 'appendix'){
+      res.filter(r => !r.error && (r.add || r.del)).forEach(r => {
+        const f = D.compare(r.raw.o, r.raw.w, {full:true, sort:true});
+        h += '<div class="sec"><h3>'+esc(r.label)+'</h3><p class="sub">Appendix: full code</p>'+f.html+'</div>';
+      });
+    }
+    $('body').innerHTML = h;
+  }
+
+  /* ---------- spreadsheet import ---------- */
+
+  // RFC4180-style: handles quoted fields containing commas, quotes and newlines,
+  // which pasted JSON-LD always has.
+  function parseDelimited(text, delim){
+    const rows = []; let row = [], field = '', i = 0, q = false;
+    text = String(text).replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+    while(i < text.length){
+      const c = text[i];
+      if(q){
+        if(c === '"'){
+          if(text[i+1] === '"'){ field += '"'; i += 2; continue; }
+          q = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if(c === '"' && field === ''){ q = true; i++; continue; }
+      if(c === delim){ row.push(field); field = ''; i++; continue; }
+      if(c === '\n'){ row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+    row.push(field); rows.push(row);
+    return rows.filter(r => r.some(x => String(x).trim() !== ''));
+  }
+
+  const findCol = (head, words) => {
+    for(let i=0;i<head.length;i++){
+      const h = head[i].toLowerCase();
+      for(let j=0;j<words.length;j++) if(h.indexOf(words[j]) > -1) return i;
+    }
+    return -1;
+  };
+
+  function importText(text){
+    if(!text.trim()){ $('impmsg').textContent = 'Nothing to import.'; return; }
+
+    let d = $('delim').value;
+    if(d === 'auto'){
+      const firstLine = text.replace(/\r/g,'').split('\n')[0];
+      d = firstLine.indexOf('\t') > -1 ? '\t' : ',';
+    }
+
+    const rows = parseDelimited(text, d);
+    if(!rows.length){ $('impmsg').textContent = 'No rows found.'; return; }
+
+    // Header row?
+    let cU = 0, cP = 1, cC = 2, start = 0;
+    const head = rows[0].map(x => String(x).trim());
+    const looksLikeHeader = head.some(h => /^(url|page|link)$/i.test(h) || /url|page/i.test(h)) &&
+      head.every(h => h.length < 40);
+    if(looksLikeHeader){
+      const u = findCol(head, ['url','page','link']);
+      const p = findCol(head, ['prev','old','before','from','existing']);
+      const c = findCol(head, ['curr','new','after','amend','latest','updated','to']);
+      if(u > -1) cU = u;
+      if(p > -1) cP = p;
+      if(c > -1) cC = c;
+      start = 1;
+    }
+
+    const data = rows.slice(start)
+      .map(r => ({
+        url: (r[cU] || '').trim(),
+        prev: (r[cP] || '').trim(),
+        cur: (r[cC] || '').trim()
+      }))
+      .filter(r => r.prev || r.cur);
+
+    if(!data.length){
+      $('impmsg').textContent = 'Found ' + rows.length + ' row(s) but no schema columns. Check the separator.';
+      return;
+    }
+
+    $('entries').innerHTML = '';
+    data.forEach(r => addEntry(r.url, r.prev, r.cur));
+    $('impmsg').textContent = 'Loaded ' + data.length + ' row' + (data.length === 1 ? '' : 's') +
+      (looksLikeHeader ? ' (header row detected)' : ' (no header row)') + '.';
+    $('imp').open = false;
+    render();
+  }
+
+  $('load').addEventListener('click', () => importText($('paste').value));
+
+  $('file').addEventListener('change', function(){
+    const f = this.files && this.files[0];
+    if(!f) return;
+    const fr = new FileReader();
+    fr.onload = () => { $('paste').value = fr.result; importText(fr.result); };
+    fr.onerror = () => { $('impmsg').textContent = 'Could not read that file.'; };
+    fr.readAsText(f);
+  });
+
+  $('tpl').addEventListener('click', () => {
+    const q = s => '"' + s.replace(/"/g,'""') + '"';
+    const csv = 'URL,Previous schema,Current schema\n' +
+      [q('https://llmsource.com/'),
+       q('{\n  "@context": "https://schema.org",\n  "@type": "Organization",\n  "name": "LLMSource"\n}'),
+       q('{\n  "@context": "https://schema.org",\n  "@type": "Organization",\n  "name": "LLMSource",\n  "url": "https://llmsource.com/"\n}')
+      ].join(',') + '\n';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+    a.download = 'schema-comparison-template.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+
+  $('add').addEventListener('click', () => addEntry());
+  $('go').addEventListener('click', render);
+  $('opt-detail').addEventListener('change', () => { if($('report').classList.contains('on')) render(); });
+  $('print').addEventListener('click', () => { render(); setTimeout(() => window.print(), 60); });
+})();
+</script>
+</body>
+</html>

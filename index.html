@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schema Markup Tracker</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Schema Markup Tracker</h1>
+  <p class="lede">Every URL we maintain structured data for, with what changed and when.
+    Click a URL to see the change summary; the code sits behind the sections inside.</p>
+
+  <div id="recent" class="recent noprint"></div>
+
+  <div class="topbar noprint">
+    <div class="grow">
+      <label for="q">Search by URL</label>
+      <input type="search" id="q" placeholder="/about, /solutions…" autocomplete="off">
+    </div>
+    <div>
+      <label for="sort">Sort</label>
+      <select id="sort" style="width:auto">
+        <option value="newest">Newest updated first</option>
+        <option value="oldest">Oldest updated first</option>
+        <option value="url">URL A–Z</option>
+      </select>
+    </div>
+    <div><button id="expand" type="button">Expand all</button></div>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div id="list"></div>
+
+  <footer>
+    <span id="site"></span> · <span id="stamp"></span> ·
+    <a href="tools/compare.html">Ad-hoc comparison tool</a>
+  </footer>
+
+</div>
+
+<script src="assets/diff.js"></script>
+<script src="data/schema-history.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
