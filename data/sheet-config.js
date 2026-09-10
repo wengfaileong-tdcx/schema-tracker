@@ -5,12 +5,12 @@
 
    Sheet layout — one row per PAGE, one column per VERSION:
 
-     Title    | URL              | Status | 2026-05-28   | 2026-06-10
+     Title    | URL              | Status | 20260528     | 20260610
      Homepage | /                | Live   | {schema json}| {schema json}
 
    - Title and Status are optional; URL is required.
    - Every column after Title/URL/Status is a version: its header must
-     be the date (YYYY-MM-DD) that version went live, and its cells hold
+     be the date (YYYYMMDD) that version went live, and its cells hold
      that version's schema JSON, one page per row.
    - Adding a new version for a page is just adding a new dated column
      on the right and filling in that row's cell — leave other rows'

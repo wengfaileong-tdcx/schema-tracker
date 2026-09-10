@@ -26,7 +26,8 @@
     return -1;
   }
 
-  const looksLikeDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '').trim());
+  const looksLikeDate = s => /^\d{8}$/.test(String(s || '').trim());
+  const toIsoDate = s => s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
 
   // Wide layout: one row per page, one column per version. Fixed columns are
   // Title / URL / Status (any order); every other column is a version, its
@@ -45,15 +46,15 @@
     const versionCols = head
       .map((h, i) => ({ h: h, i: i }))
       .filter(c => !fixed.has(c.i) && c.h);
-    if (!versionCols.length) throw new Error('No version columns found — add a dated column (YYYY-MM-DD) after Title/URL/Status.');
+    if (!versionCols.length) throw new Error('No version columns found — add a dated column (YYYYMMDD) after Title/URL/Status.');
     const badHeaders = versionCols.filter(c => !looksLikeDate(c.h));
-    if (badHeaders.length) throw new Error('Version column "' + badHeaders[0].h + '" is not a YYYY-MM-DD date.');
+    if (badHeaders.length) throw new Error('Version column "' + badHeaders[0].h + '" is not a YYYYMMDD date.');
 
     const pages = rows.slice(1).map(r => {
       const url = (r[urlIdx] || '').trim();
       if (!url) return null;
       const versions = versionCols
-        .map(c => ({ date: c.h, schema: (r[c.i] || '').trim() }))
+        .map(c => ({ date: toIsoDate(c.h), schema: (r[c.i] || '').trim() }))
         .filter(v => v.schema)
         .map(v => ({ version: v.date, date: v.date, schema: v.schema }));
       if (!versions.length) return null;

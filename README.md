@@ -152,14 +152,14 @@ is public.
 
 One row per page, one column per version — new version = new column on the right:
 
-| Title | URL | Status | 2026-05-28 | 2026-06-10 |
-|-------|-----|--------|-----------|-----------|
+| Title | URL | Status | 20260528 | 20260610 |
+|-------|-----|--------|----------|----------|
 | Homepage | / | Live | {schema json} | {schema json} |
 
 - `Title` and `Status` are optional; `URL` is required.
 - Every column after Title/URL/Status is treated as a version — its **header must be the
-  date the version went live, in `YYYY-MM-DD` format**, and its cells hold that version's
-  schema JSON pasted as plain text (use Alt+Enter for line breaks inside a cell).
+  date the version went live, in `YYYYMMDD` format** (e.g. `20260528`), and its cells hold
+  that version's schema JSON pasted as plain text (use Alt+Enter for line breaks inside a cell).
 - Leave a cell blank in a version column if that page didn't change that day.
 - Column order for Title/URL/Status doesn't matter — the loader matches by keyword.
 - Share the sheet as **"Anyone at [your org] with the link can view"** (not "Publish to
