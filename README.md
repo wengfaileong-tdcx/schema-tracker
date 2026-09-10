@@ -150,18 +150,23 @@ is public.
 
 ### 1. Set up the sheet
 
-Create a Google Sheet with a header row and one row per version:
+One row per page, one column per version — new version = new column on the right:
 
-| URL | Title | Status | Version | Date | Schema | Note |
-|-----|-------|--------|---------|------|--------|------|
+| Title | URL | Status | 2026-05-28 | 2026-06-10 |
+|-------|-----|--------|-----------|-----------|
+| Homepage | / | Live | {schema json} | {schema json} |
 
-- `Date` should be `YYYY-MM-DD`.
-- `Schema` is the JSON-LD pasted as plain text into the cell (use Alt+Enter for line
-  breaks inside the cell if you want it readable).
-- Column order and casing don't matter — the loader matches by keyword.
+- `Title` and `Status` are optional; `URL` is required.
+- Every column after Title/URL/Status is treated as a version — its **header must be the
+  date the version went live, in `YYYY-MM-DD` format**, and its cells hold that version's
+  schema JSON pasted as plain text (use Alt+Enter for line breaks inside a cell).
+- Leave a cell blank in a version column if that page didn't change that day.
+- Column order for Title/URL/Status doesn't matter — the loader matches by keyword.
 - Share the sheet as **"Anyone at [your org] with the link can view"** (not "Publish to
-  web" — that's a different, less controllable setting). Only people who already have
-  access to the sheet in Drive will ever be able to load it in the dashboard.
+  web" — that's a different, less controllable setting), or share individually with
+  named collaborators if the project isn't on a company-managed Google account. Only
+  people who already have access to the sheet in Drive will ever be able to load it in
+  the dashboard.
 
 ### 2. Create the OAuth client (one-time, in Google Cloud Console)
 
@@ -185,7 +190,7 @@ window.SHEET_CONFIG = {
   enabled: true,
   clientId: "...apps.googleusercontent.com",   // from step 2.6
   spreadsheetId: "...",                        // the id in the sheet's URL
-  range: "Sheet1!A:G"                          // tab name + column range
+  range: "Sheet1"                              // tab name
 };
 ```
 

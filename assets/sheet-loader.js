@@ -18,16 +18,6 @@
 
   const setStatus = msg => { $('sheet-status').textContent = msg || ''; };
 
-  const COLS = {
-    url: ['url', 'page', 'link'],
-    title: ['title', 'name'],
-    status: ['status'],
-    version: ['version'],
-    date: ['date'],
-    schema: ['schema', 'json', 'markup'],
-    note: ['note', 'reason']
-  };
-
   function findCol(head, words) {
     for (let i = 0; i < head.length; i++) {
       const h = head[i].toLowerCase();
@@ -36,42 +26,42 @@
     return -1;
   }
 
-  // Sheets API returns rows as arrays of cell strings — one row per version.
+  const looksLikeDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '').trim());
+
+  // Wide layout: one row per page, one column per version. Fixed columns are
+  // Title / URL / Status (any order); every other column is a version, its
+  // header the date (YYYY-MM-DD) that version went live, its cells the schema
+  // JSON. A new version is just a new column appended on the right.
   function rowsToData(rows) {
     if (!rows.length) throw new Error('Sheet has no rows.');
     const head = rows[0].map(x => String(x || '').trim());
-    const idx = {};
-    Object.keys(COLS).forEach(k => { idx[k] = findCol(head, COLS[k]); });
-    ['url', 'version', 'date', 'schema'].forEach(k => {
-      if (idx[k] < 0) throw new Error('Missing a "' + k + '" column in the header row.');
-    });
 
-    const byUrl = {};
-    const order = [];
-    rows.slice(1).forEach(r => {
-      const url = (r[idx.url] || '').trim();
-      const schema = (r[idx.schema] || '').trim();
-      const version = (r[idx.version] || '').trim();
-      if (!url || !schema || !version) return;
-      if (!byUrl[url]) { byUrl[url] = { url: url, versions: [] }; order.push(url); }
-      byUrl[url].versions.push({
-        version: version,
-        date: (r[idx.date] || '').trim(),
-        schema: schema,
-        note: idx.note > -1 ? (r[idx.note] || '').trim() || undefined : undefined,
-        _status: idx.status > -1 ? (r[idx.status] || '').trim() : '',
-        _title: idx.title > -1 ? (r[idx.title] || '').trim() : ''
-      });
-    });
+    const urlIdx = findCol(head, ['url', 'page', 'link']);
+    const titleIdx = findCol(head, ['title', 'name']);
+    const statusIdx = findCol(head, ['status']);
+    if (urlIdx < 0) throw new Error('Missing a "URL" column in the header row.');
 
-    const pages = order.map(u => {
-      const page = byUrl[u];
-      const newest = page.versions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
-      page.status = newest._status || undefined;
-      page.title = newest._title || undefined;
-      page.versions.forEach(v => { delete v._status; delete v._title; });
+    const fixed = new Set([urlIdx, titleIdx, statusIdx].filter(i => i > -1));
+    const versionCols = head
+      .map((h, i) => ({ h: h, i: i }))
+      .filter(c => !fixed.has(c.i) && c.h);
+    if (!versionCols.length) throw new Error('No version columns found — add a dated column (YYYY-MM-DD) after Title/URL/Status.');
+    const badHeaders = versionCols.filter(c => !looksLikeDate(c.h));
+    if (badHeaders.length) throw new Error('Version column "' + badHeaders[0].h + '" is not a YYYY-MM-DD date.');
+
+    const pages = rows.slice(1).map(r => {
+      const url = (r[urlIdx] || '').trim();
+      if (!url) return null;
+      const versions = versionCols
+        .map(c => ({ date: c.h, schema: (r[c.i] || '').trim() }))
+        .filter(v => v.schema)
+        .map(v => ({ version: v.date, date: v.date, schema: v.schema }));
+      if (!versions.length) return null;
+      const page = { url: url, versions: versions };
+      if (titleIdx > -1 && r[titleIdx]) page.title = r[titleIdx].trim();
+      if (statusIdx > -1 && r[statusIdx]) page.status = r[statusIdx].trim();
       return page;
-    });
+    }).filter(Boolean);
 
     return { site: cfg.site || '', pages: pages };
   }
