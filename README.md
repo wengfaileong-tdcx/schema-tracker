@@ -140,6 +140,64 @@ the **Download template** button gives you a correctly-formatted example to copy
 Once loaded, every row becomes a comparison and the report renders immediately. Rows
 where both schema cells are empty are skipped.
 
+## Connecting a Google Sheet (optional, instead of editing the .js file)
+
+The dashboard can read its data from a Google Sheet instead of `data/schema-history.js`,
+so non-technical teammates can add rows in a spreadsheet rather than editing code. This
+uses each viewer's own Google sign-in and their own access to the sheet — there is no
+shared password or API key sitting in the code, so it's safe to use even once this repo
+is public.
+
+### 1. Set up the sheet
+
+Create a Google Sheet with a header row and one row per version:
+
+| URL | Title | Status | Version | Date | Schema | Note |
+|-----|-------|--------|---------|------|--------|------|
+
+- `Date` should be `YYYY-MM-DD`.
+- `Schema` is the JSON-LD pasted as plain text into the cell (use Alt+Enter for line
+  breaks inside the cell if you want it readable).
+- Column order and casing don't matter — the loader matches by keyword.
+- Share the sheet as **"Anyone at [your org] with the link can view"** (not "Publish to
+  web" — that's a different, less controllable setting). Only people who already have
+  access to the sheet in Drive will ever be able to load it in the dashboard.
+
+### 2. Create the OAuth client (one-time, in Google Cloud Console)
+
+1. Create or pick a Google Cloud project.
+2. **APIs & Services → Library** → enable **Google Sheets API**.
+3. **APIs & Services → OAuth consent screen** → User type **Internal** (this is what
+   restricts sign-in to people inside the organization — pick this over "External").
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application
+   type **Web application**.
+5. Under **Authorized JavaScript origins**, add every URL the dashboard will be opened
+   from, e.g. `https://<org>.github.io` and, for local testing, `http://localhost:5500`
+   (whatever port you preview with). No redirect URI is needed.
+6. Copy the generated **Client ID**.
+
+### 3. Wire it up
+
+Open `data/sheet-config.js` and fill in:
+
+```js
+window.SHEET_CONFIG = {
+  enabled: true,
+  clientId: "...apps.googleusercontent.com",   // from step 2.6
+  spreadsheetId: "...",                        // the id in the sheet's URL
+  range: "Sheet1!A:G"                          // tab name + column range
+};
+```
+
+Reload the dashboard — a **Connect Google Sheet** button appears above the search bar.
+Clicking it opens a Google sign-in popup; once signed in, the dashboard replaces its data
+with whatever the sheet contains, without a page reload. If someone without sheet access
+clicks it, Google's own sign-in simply won't grant them the data — nothing to configure
+on the dashboard side for that.
+
+Until `enabled` is `true`, none of this loads and `data/schema-history.js` is used as
+before.
+
 ## Sample data
 
 `data/schema-history.js` ships with example content so the dashboard has something to

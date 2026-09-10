@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const esc = D.esc;
 
-  const DATA = window.SCHEMA_HISTORY || { pages: [] };
+  let DATA = window.SCHEMA_HISTORY || { pages: [] };
   const RECENT_DAYS = 14;
 
   /* ---------- helpers ---------- */
@@ -323,10 +323,19 @@
     this.textContent = anyClosed ? 'Collapse all' : 'Expand all';
   });
 
-  if (DATA.site) $('site').textContent = DATA.site;
-  const allDates = DATA.pages.reduce((a, p) => a.concat((p.versions || []).map(v => v.date)), []).sort();
-  if (allDates.length) $('stamp').textContent = 'Most recent change ' + fmt(allDates[allDates.length - 1]);
+  function renderAll() {
+    $('site').textContent = DATA.site || '';
+    const allDates = DATA.pages.reduce((a, p) => a.concat((p.versions || []).map(v => v.date)), []).sort();
+    $('stamp').textContent = allDates.length ? 'Most recent change ' + fmt(allDates[allDates.length - 1]) : '';
+    drawRecent();
+    draw();
+  }
 
-  drawRecent();
-  draw();
+  // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data
+  // without a page reload.
+  window.SchemaApp = {
+    setData: function (data) { DATA = data || { pages: [] }; renderAll(); }
+  };
+
+  renderAll();
 })();
