@@ -14,6 +14,7 @@
   bar.className = 'sheet-bar noprint';
   bar.innerHTML =
     '<button id="sheet-connect" type="button">Connect Google Sheet</button>' +
+    '<select id="sheet-tab" style="width:auto" hidden></select>' +
     '<span class="count" id="sheet-status"></span>';
   document.getElementById('recent').insertAdjacentElement('beforebegin', bar);
 
@@ -79,16 +80,37 @@
     return { site: cfg.site || '', pages: pages, warnings: badCells };
   }
 
-  function fetchValues(token) {
-    const range = encodeURIComponent(cfg.range || 'Sheet1');
-    const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + '/values/' + range;
-    return fetch(url, { headers: { Authorization: 'Bearer ' + token } }).then(r => {
+  function api(token, path) {
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + path, {
+      headers: { Authorization: 'Bearer ' + token }
+    }).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error((e.error && e.error.message) || ('HTTP ' + r.status)); });
       return r.json();
     });
   }
 
+  const fetchTabs = token => api(token, '?fields=sheets.properties.title')
+    .then(data => (data.sheets || []).map(s => s.properties.title));
+
+  const fetchValues = (token, tab) => api(token, '/values/' + encodeURIComponent(tab));
+
   let tokenClient = null;
+  let currentToken = null;
+
+  function loadTab(tab) {
+    setStatus('Loading ' + tab + '…');
+    fetchValues(currentToken, tab)
+      .then(data => {
+        const result = rowsToData(data.values || []);
+        window.SchemaApp.setData(result, 'sheet');
+        const when = new Date().toLocaleTimeString('en-GB');
+        setStatus(result.warnings.length
+          ? 'Loaded ' + tab + ' · ' + when + ' · skipped ' + result.warnings.length + ' cell(s) with invalid JSON (see console)'
+          : 'Loaded ' + tab + ' · ' + when);
+        if (result.warnings.length) result.warnings.forEach(w => console.warn('Schema Tracker sheet:', w));
+      })
+      .catch(err => setStatus('Could not load "' + tab + '": ' + err.message));
+  }
 
   function connect() {
     if (typeof google === 'undefined' || !google.accounts) {
@@ -105,21 +127,22 @@
     setStatus('Signing in…');
     tokenClient.callback = resp => {
       if (resp.error) { setStatus('Sign-in failed: ' + resp.error); return; }
-      setStatus('Loading sheet…');
-      fetchValues(resp.access_token)
-        .then(data => {
-          const result = rowsToData(data.values || []);
-          window.SchemaApp.setData(result, 'sheet');
-          const when = new Date().toLocaleTimeString('en-GB');
-          setStatus(result.warnings.length
-            ? 'Loaded · ' + when + ' · skipped ' + result.warnings.length + ' cell(s) with invalid JSON (see console)'
-            : 'Loaded from Google Sheet · ' + when);
-          if (result.warnings.length) result.warnings.forEach(w => console.warn('Schema Tracker sheet:', w));
+      currentToken = resp.access_token;
+      setStatus('Reading sheet tabs…');
+      fetchTabs(currentToken)
+        .then(tabs => {
+          if (!tabs.length) throw new Error('Spreadsheet has no tabs.');
+          const sel = $('sheet-tab');
+          const preferred = tabs.indexOf(cfg.range) > -1 ? cfg.range : tabs[0];
+          sel.innerHTML = tabs.map(t => '<option' + (t === preferred ? ' selected' : '') + '>' + D.esc(t) + '</option>').join('');
+          sel.hidden = tabs.length < 2;
+          loadTab(preferred);
         })
-        .catch(err => setStatus('Could not load sheet: ' + err.message));
+        .catch(err => setStatus('Could not read spreadsheet: ' + err.message));
     };
     tokenClient.requestAccessToken({ prompt: '' });
   }
 
   bar.addEventListener('click', e => { if (e.target.id === 'sheet-connect') connect(); });
+  $('sheet-tab').addEventListener('change', e => loadTab(e.target.value));
 })();

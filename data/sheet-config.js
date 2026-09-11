@@ -18,6 +18,11 @@
 
    clientId and spreadsheetId come from Google Cloud Console / the
    sheet's own URL — see README.md, "Connecting a Google Sheet".
+
+   If the spreadsheet has more than one tab, a dropdown appears on the
+   dashboard to switch between them (e.g. tracking multiple sites in
+   one file). "range" below just picks which tab loads by default —
+   it must match a real tab name exactly.
    ============================================================ */
 
 window.SHEET_CONFIG = {
