@@ -109,9 +109,6 @@
     }
     h += '</div>';
 
-    /* 1b. comments on the current version */
-    h += '<div class="block">' + commentsBlock(page, cur) + '</div>';
-
     /* 2. full current schema */
     h += '<div class="block">' +
       '<details class="fold" data-schema="' + esc(page.url) + '">' +
@@ -313,7 +310,7 @@
           '<div class="inner">' + (r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html) +
           '</div></details>';
       }
-      if (i > 0) h += commentsBlock(page, v); // current version's comments already shown above
+      h += commentsBlock(page, v);
       box.innerHTML = h;
       box.dataset.done = '1';
       return;
