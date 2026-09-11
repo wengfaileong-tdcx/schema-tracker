@@ -96,7 +96,7 @@
       setStatus('Loading sheet…');
       fetchValues(resp.access_token)
         .then(data => {
-          window.SchemaApp.setData(rowsToData(data.values || []));
+          window.SchemaApp.setData(rowsToData(data.values || []), 'sheet');
           setStatus('Loaded from Google Sheet · ' + new Date().toLocaleTimeString('en-GB'));
         })
         .catch(err => setStatus('Could not load sheet: ' + err.message));

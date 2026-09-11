@@ -4,6 +4,7 @@
   const esc = D.esc;
 
   let DATA = window.SCHEMA_HISTORY || { pages: [] };
+  let SOURCE = 'sample';
   const RECENT_DAYS = 14;
 
   /* ---------- helpers ---------- */
@@ -323,10 +324,24 @@
     this.textContent = anyClosed ? 'Collapse all' : 'Expand all';
   });
 
+  function drawBanner() {
+    if (SOURCE === 'sheet') {
+      $('banner').innerHTML = '<div class="src-banner src-live">' +
+        'Showing live data loaded from your Google Sheet.</div>';
+      return;
+    }
+    const hasSheet = window.SHEET_CONFIG && window.SHEET_CONFIG.enabled;
+    $('banner').innerHTML = '<div class="src-banner src-sample">' +
+      'Showing sample data, not real schema history.' +
+      (hasSheet ? ' Click <b>Connect Google Sheet</b> below to load the real thing.' : '') +
+      '</div>';
+  }
+
   function renderAll() {
     $('site').textContent = DATA.site || '';
     const allDates = DATA.pages.reduce((a, p) => a.concat((p.versions || []).map(v => v.date)), []).sort();
     $('stamp').textContent = allDates.length ? 'Most recent change ' + fmt(allDates[allDates.length - 1]) : '';
+    drawBanner();
     drawRecent();
     draw();
   }
@@ -334,7 +349,7 @@
   // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data
   // without a page reload.
   window.SchemaApp = {
-    setData: function (data) { DATA = data || { pages: [] }; renderAll(); }
+    setData: function (data, source) { DATA = data || { pages: [] }; SOURCE = source || 'sample'; renderAll(); }
   };
 
   renderAll();
