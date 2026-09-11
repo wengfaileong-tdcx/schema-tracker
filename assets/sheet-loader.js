@@ -7,6 +7,7 @@
   const cfg = window.SHEET_CONFIG;
   if (!cfg || !cfg.enabled) return;
 
+  const D = window.SchemaDiff;
   const $ = id => document.getElementById(id);
 
   const bar = document.createElement('div');
@@ -50,13 +51,24 @@
     const badHeaders = versionCols.filter(c => !looksLikeDate(c.h));
     if (badHeaders.length) throw new Error('Version column "' + badHeaders[0].h + '" is not a YYYYMMDD date.');
 
+    const badCells = [];
     const pages = rows.slice(1).map(r => {
       const url = (r[urlIdx] || '').trim();
       if (!url) return null;
       const versions = versionCols
-        .map(c => ({ date: toIsoDate(c.h), schema: (r[c.i] || '').trim() }))
-        .filter(v => v.schema)
-        .map(v => ({ version: v.date, date: v.date, schema: v.schema }));
+        .map(c => ({ date: toIsoDate(c.h), raw: (r[c.i] || '').trim() }))
+        .filter(v => v.raw)
+        .map(v => {
+          // Cells hold either a raw JSON object or a pasted <script> block —
+          // parse() (shared with the rest of the dashboard) accepts either,
+          // and this turns it into a real object so the diff/summary code
+          // (which expects parsed values, not text) works the same as it
+          // does for data/schema-history.js.
+          const parsed = D.parse(v.raw);
+          if (parsed.error) { badCells.push(url + ' @ ' + v.date + ': ' + parsed.error); return null; }
+          return { version: v.date, date: v.date, schema: parsed.value };
+        })
+        .filter(Boolean);
       if (!versions.length) return null;
       const page = { url: url, versions: versions };
       if (titleIdx > -1 && r[titleIdx]) page.title = r[titleIdx].trim();
@@ -64,7 +76,7 @@
       return page;
     }).filter(Boolean);
 
-    return { site: cfg.site || '', pages: pages };
+    return { site: cfg.site || '', pages: pages, warnings: badCells };
   }
 
   function fetchValues(token) {
@@ -96,8 +108,13 @@
       setStatus('Loading sheet…');
       fetchValues(resp.access_token)
         .then(data => {
-          window.SchemaApp.setData(rowsToData(data.values || []), 'sheet');
-          setStatus('Loaded from Google Sheet · ' + new Date().toLocaleTimeString('en-GB'));
+          const result = rowsToData(data.values || []);
+          window.SchemaApp.setData(result, 'sheet');
+          const when = new Date().toLocaleTimeString('en-GB');
+          setStatus(result.warnings.length
+            ? 'Loaded · ' + when + ' · skipped ' + result.warnings.length + ' cell(s) with invalid JSON (see console)'
+            : 'Loaded from Google Sheet · ' + when);
+          if (result.warnings.length) result.warnings.forEach(w => console.warn('Schema Tracker sheet:', w));
         })
         .catch(err => setStatus('Could not load sheet: ' + err.message));
     };
