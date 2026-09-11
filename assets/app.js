@@ -43,6 +43,33 @@
   const chgList = items =>
     '<ul class="chg">' + items.map(t => '<li class="' + cls(t) + '">' + esc(t) + '</li>').join('') + '</ul>';
 
+  /* ---------- comments (only writable when a sheet with write access is connected) ---------- */
+
+  const fmtTs = ts => {
+    const d = new Date(ts);
+    return isNaN(d) ? (ts || '') : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const commentItem = c =>
+    '<li><div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(fmtTs(c.ts)) + '</div>' +
+    '<p class="cm-text">' + esc(c.text) + '</p></li>';
+
+  function commentsBlock(page, v) {
+    const comments = v.comments || [];
+    const canPost = !!(window.SchemaApp && window.SchemaApp.onPostComment);
+    return '<details class="fold" data-comments="' + esc(page.url) + '|' + esc(v.version) + '">' +
+      '<summary>Comments<span class="count"> · ' + comments.length + '</span></summary>' +
+      '<div class="inner">' +
+      '<ul class="cm-list">' + (comments.length ? comments.map(commentItem).join('') : '<li class="cm-empty">No comments yet.</li>') + '</ul>' +
+      (canPost
+        ? '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
+          '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
+          '<div class="foldbar"><button class="mini cm-post" type="button">Post comment</button>' +
+          '<span class="count cm-msg"></span></div></div>'
+        : '<p class="flat">Connect Google Sheet to add a comment.</p>') +
+      '</div></details>';
+  }
+
   /* ---------- render one page row ---------- */
 
   function pageRow(page) {
@@ -283,6 +310,7 @@
           '<div class="inner">' + (r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html) +
           '</div></details>';
       }
+      h += commentsBlock(page, v);
       box.innerHTML = h;
       box.dataset.done = '1';
       return;
@@ -301,6 +329,30 @@
       host.innerHTML = '<p class="count" style="padding:0 0 7px">' +
         esc(vs[older].version) + ' → ' + esc(vs[newer].version) + '</p>' +
         (r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html);
+      return;
+    }
+
+    /* post a comment */
+    if (t.classList.contains('cm-post')) {
+      const inner = t.closest('.inner');
+      const nameEl = inner.querySelector('.cm-name'), bodyEl = inner.querySelector('.cm-body'), msg = inner.querySelector('.cm-msg');
+      const name = nameEl.value.trim(), text = bodyEl.value.trim();
+      if (!name || !text) { msg.textContent = 'Enter your name and a comment.'; return; }
+      const [url, version] = t.closest('[data-comments]').dataset.comments.split('|');
+      msg.textContent = 'Posting…';
+      t.disabled = true;
+      window.SchemaApp.onPostComment({ url: url, version: version, name: name, text: text }, function (err, entry) {
+        t.disabled = false;
+        if (err) { msg.textContent = 'Could not post: ' + err.message; return; }
+        const list = inner.querySelector('.cm-list');
+        const empty = list.querySelector('.cm-empty');
+        if (empty) empty.remove();
+        list.insertAdjacentHTML('beforeend', commentItem(entry));
+        const fold = t.closest('.fold');
+        const count = fold.querySelector('summary .count');
+        count.textContent = ' · ' + list.querySelectorAll('li').length;
+        nameEl.value = ''; bodyEl.value = ''; msg.textContent = 'Posted.';
+      });
     }
   });
 
