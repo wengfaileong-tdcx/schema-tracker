@@ -23,21 +23,11 @@
    dashboard to switch between them (e.g. tracking multiple sites in
    one file). "range" below just picks which tab loads by default —
    it must match a real tab name exactly.
-
-   commentsTab (optional) turns on in-dashboard commenting: viewers can
-   add a comment under any version, saved as a new row in that tab
-   (URL | Version | Name | Comment | Timestamp — Version must match the
-   version's date, e.g. "2026-05-28"). Create that tab once, with just
-   that header row, before turning this on. Enabling it upgrades the
-   Google permission the dashboard asks for from read-only to
-   read+write, since posting a comment means writing to the sheet.
-   Leave it blank ("") to keep comments off and stay read-only.
    ============================================================ */
 
 window.SHEET_CONFIG = {
   enabled: true,
   clientId: "369422014820-1kou8ivk7s0nd8411qtrh65q9sejbbeb.apps.googleusercontent.com",
   spreadsheetId: "1ca7noantQV3pbxobG1ByidyN27O8DACAm0ehgys0JP4",
-  range: "Sheet1",
-  commentsTab: "Comments"
+  range: "Sheet1"
 };

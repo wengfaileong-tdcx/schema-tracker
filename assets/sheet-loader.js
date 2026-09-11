@@ -80,10 +80,10 @@
     return { site: cfg.site || '', pages: pages, warnings: badCells };
   }
 
-  function api(token, path, opts) {
-    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + path, Object.assign({
+  function api(token, path) {
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + path, {
       headers: { Authorization: 'Bearer ' + token }
-    }, opts)).then(r => {
+    }).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error((e.error && e.error.message) || ('HTTP ' + r.status)); });
       return r.json();
     });
@@ -94,56 +94,14 @@
 
   const fetchValues = (token, tab) => api(token, '/values/' + encodeURIComponent(tab));
 
-  // Missing "Comments" tab shouldn't break the whole load — just means no
-  // comments yet (or the feature isn't set up on this sheet).
-  const fetchComments = token => cfg.commentsTab
-    ? fetchValues(token, cfg.commentsTab).catch(() => ({ values: [] }))
-    : Promise.resolve({ values: [] });
-
-  // Comments tab layout: URL | Version | Name | Comment | Timestamp.
-  // "Version" must match the version's date (e.g. "2026-05-28") so a
-  // comment attaches to the right column.
-  function attachComments(data, rows) {
-    data.pages.forEach(p => p.versions.forEach(v => { v.comments = []; }));
-    if (!rows.length) return data;
-    const head = rows[0].map(x => String(x || '').trim().toLowerCase());
-    const uIdx = head.indexOf('url'), vIdx = head.indexOf('version'),
-      nIdx = head.indexOf('name'), cIdx = head.indexOf('comment'), tIdx = head.indexOf('timestamp');
-    if (uIdx < 0 || vIdx < 0 || cIdx < 0) return data;
-
-    const byKey = {};
-    rows.slice(1).forEach(r => {
-      const url = (r[uIdx] || '').trim(), version = (r[vIdx] || '').trim(), text = (r[cIdx] || '').trim();
-      if (!url || !version || !text) return;
-      const key = url + '|' + version;
-      (byKey[key] = byKey[key] || []).push({
-        name: nIdx > -1 ? (r[nIdx] || '').trim() : '',
-        text: text,
-        ts: tIdx > -1 ? (r[tIdx] || '').trim() : ''
-      });
-    });
-    data.pages.forEach(p => p.versions.forEach(v => { v.comments = byKey[p.url + '|' + v.version] || []; }));
-    return data;
-  }
-
-  function appendComment(token, url, version, name, text) {
-    const ts = new Date().toISOString();
-    const range = encodeURIComponent(cfg.commentsTab) + '!A:E';
-    return api(token, '/values/' + range + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: [[url, version, name, text, ts]] })
-    }).then(() => ({ name: name, text: text, ts: ts }));
-  }
-
   let tokenClient = null;
   let currentToken = null;
 
   function loadTab(tab) {
     setStatus('Loading ' + tab + '…');
-    Promise.all([fetchValues(currentToken, tab), fetchComments(currentToken)])
-      .then(([data, commentsData]) => {
-        const result = attachComments(rowsToData(data.values || []), commentsData.values || []);
+    fetchValues(currentToken, tab)
+      .then(data => {
+        const result = rowsToData(data.values || []);
         window.SchemaApp.setData(result, 'sheet');
         const when = new Date().toLocaleTimeString('en-GB');
         setStatus(result.warnings.length
@@ -162,9 +120,7 @@
     if (!tokenClient) {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: cfg.clientId,
-        scope: cfg.commentsTab
-          ? 'https://www.googleapis.com/auth/spreadsheets'
-          : 'https://www.googleapis.com/auth/spreadsheets.readonly',
+        scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
         callback: () => {}
       });
     }
@@ -185,16 +141,6 @@
         .catch(err => setStatus('Could not read spreadsheet: ' + err.message));
     };
     tokenClient.requestAccessToken({ prompt: '' });
-  }
-
-  if (cfg.commentsTab) {
-    window.SchemaApp = window.SchemaApp || {};
-    window.SchemaApp.onPostComment = function (payload, cb) {
-      if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
-      appendComment(currentToken, payload.url, payload.version, payload.name, payload.text)
-        .then(entry => cb(null, entry))
-        .catch(err => cb(err));
-    };
   }
 
   bar.addEventListener('click', e => { if (e.target.id === 'sheet-connect') connect(); });

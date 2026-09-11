@@ -29,16 +29,6 @@ button.primary:hover{background:#2b3844}
 button.mini{font-size:12.5px;padding:4px 10px}
 .count{font-size:13px;color:var(--muted);white-space:nowrap;padding-bottom:9px}
 
-/* ---------- comments ---------- */
-ul.cm-list{list-style:none;margin:0 0 10px;padding:0}
-ul.cm-list li{padding:8px 0;border-top:1px solid var(--rule)}
-ul.cm-list li:first-child{border-top:0}
-ul.cm-list li.cm-empty{color:var(--muted);font-size:13.5px}
-.cm-meta{font-size:12.5px;color:var(--muted)}
-.cm-text{margin:4px 0 0;font-size:13.5px;white-space:pre-wrap}
-.cm-form input,.cm-form textarea{margin-bottom:8px}
-.cm-form textarea{resize:vertical;font-family:inherit}
-
 /* ---------- data source banner ---------- */
 .src-banner{font-size:13.5px;font-weight:500;border-radius:5px;padding:10px 14px;margin-bottom:16px}
 .src-sample{background:var(--warn-bg);border:1px solid #dcc282;color:var(--warn-ink)}
