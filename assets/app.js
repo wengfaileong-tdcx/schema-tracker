@@ -142,28 +142,19 @@
   function recentFeed() {
     const rows = DATA.pages
       .filter(p => (p.versions || []).length)
-      .map(p => {
-        const vs = ordered(p);
-        return { page: p, cur: vs[0], hasPrev: vs.length > 1 };
-      })
+      .map(p => ({ page: p, cur: ordered(p)[0] }))
       .filter(r => r.cur.date)
       .sort((a, b) => b.cur.date.localeCompare(a.cur.date));
 
     if (!rows.length) return '';
 
     const items = rows.slice(0, RECENT_FEED_MAX).map(r => {
-      const items = summaryFor(r.page, 0);
       const recent = daysAgo(r.cur.date) <= RECENT_DAYS;
       return '<li class="rf-item' + (recent ? ' rf-new' : '') + '" data-url="' + esc(r.page.url) + '">' +
         '<button type="button" class="rf-open">' +
-        '<span class="rf-top">' +
+        '<span class="rf-title">' + esc(r.page.title || r.page.url) + '</span>' +
         '<span class="rf-url">' + esc(r.page.url) + '</span>' +
         '<span class="rf-date">' + esc(fmt(r.cur.date)) + '</span>' +
-        '</span>' +
-        '<span class="rf-sum">' + (r.hasPrev
-          ? esc(items.slice(0, 2).join(' · ')) + (items.length > 2 ? ' · +' + (items.length - 2) + ' more' : '')
-          : 'First tracked version (' + esc(r.cur.version) + ')') +
-        '</span>' +
         '</button></li>';
     }).join('');
 

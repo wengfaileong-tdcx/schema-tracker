@@ -44,10 +44,9 @@ button.mini{font-size:12.5px;padding:4px 10px}
 .rf-item.rf-new{border-color:#a9c3e8}
 .rf-open{width:100%;text-align:left;border:0;background:none;padding:11px 13px;border-radius:6px;cursor:pointer;display:block}
 .rf-open:hover{background:#f7f9fa}
-.rf-top{display:flex;justify-content:space-between;gap:10px;font-size:13.5px}
-.rf-url{font-weight:600;word-break:break-all}
-.rf-date{color:var(--muted);white-space:nowrap;font-size:12.5px}
-.rf-sum{display:block;margin-top:5px;font-size:13px;color:var(--muted)}
+.rf-title{display:block;font-size:14.5px;font-weight:600}
+.rf-url{display:block;margin-top:3px;font-size:13px;color:var(--muted);word-break:break-all}
+.rf-date{display:block;margin-top:5px;font-size:12.5px;color:var(--muted)}
 .rf-item.rf-new .rf-sum{color:var(--ink)}
 
 /* ---------- page rows ---------- */
