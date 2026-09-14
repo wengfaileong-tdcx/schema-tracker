@@ -191,10 +191,13 @@ window.SchemaDiff = (function () {
     '<span class="cell ' + cls + '"><span class="no">' + (num || '') + '</span>' +
     '<span class="tx">' + (txt === null ? '' : esc(txt)) + '</span></span>';
 
-  /* d: output of lines(). full: show every unchanged line. context: lines kept either side. */
-  function splitView(d, full, context) {
+  /* d: output of lines(). full: show every unchanged line. context: lines kept either side.
+     labels: optional {left, right} column headings, default Previous/Current. */
+  function splitView(d, full, context, labels) {
     const ctx = context == null ? 3 : context;
-    let h = '<div class="diff"><div class="gut"><span>Previous</span><span>Current</span></div>';
+    const lab = labels || {};
+    let h = '<div class="diff"><div class="gut"><span>' + esc(lab.left || 'Previous') +
+      '</span><span>' + esc(lab.right || 'Current') + '</span></div>';
 
     const keep = new Array(d.length).fill(!!full);
     if (!full) d.forEach((x, i) => {
@@ -242,12 +245,14 @@ window.SchemaDiff = (function () {
   function compare(prev, cur, opts) {
     const o = opts || {};
     const sort = o.sort !== false;
+    const lab = o.labels || {};
+    const leftName = lab.left || 'Previous', rightName = lab.right || 'Current';
     const A = toLines(prev, sort), B = toLines(cur, sort);
     if (A.error || B.error) {
       return {
-        error: (A.error ? 'Previous — ' + A.error : '') +
+        error: (A.error ? leftName + ' — ' + A.error : '') +
           (A.error && B.error ? ' / ' : '') +
-          (B.error ? 'Current — ' + B.error : '')
+          (B.error ? rightName + ' — ' + B.error : '')
       };
     }
     const d = lines(A.lines, B.lines);
@@ -256,7 +261,7 @@ window.SchemaDiff = (function () {
       add: d.filter(x => x.t === '+').length,
       del: d.filter(x => x.t === '-').length,
       summary: summarise(A.value == null ? null : A.value, B.value),
-      html: splitView(d, !!o.full, o.context)
+      html: splitView(d, !!o.full, o.context, o.labels)
     };
   }
 

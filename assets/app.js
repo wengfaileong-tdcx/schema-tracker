@@ -65,13 +65,13 @@
     const faqPage = findFaqPage(cur.schema);
     if (!faqPage || !page.liveFaq) return '';
     const tracked = trackedFaqPairs(faqPage);
-    const r = D.compare(tracked, page.liveFaq, { full: false, sort: true, context: 3 });
+    const r = D.compare(page.liveFaq, tracked, { full: false, sort: true, context: 3, labels: { left: 'Live Site', right: 'Proposed' } });
     const inSync = !r.error && !r.add && !r.del;
     return '<div class="block"><details class="fold"' + (inSync ? '' : ' open') + '>' +
-      '<summary>FAQ sync check<span class="count"> · ' +
+      '<summary>FAQ sync check with live site<span class="count"> · ' +
       (r.error ? 'error' : inSync ? 'in sync' : 'out of sync') + '</span></summary>' +
       '<div class="inner">' +
-      '<p class="hint">Tracked FAQPage schema (left) vs. what is currently live on the page (right).</p>' +
+      '<p class="hint">What is currently live on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).</p>' +
       (r.error ? '<div class="err">' + esc(r.error) + '</div>' : (inSync ? '<div class="flat">No difference found.</div>' : r.html)) +
       '</div></details></div>';
   }
