@@ -34,12 +34,15 @@
    lineCommentsTab (optional): turns on commenting directly on a changed
    line inside "View code changes" or "FAQ sync check" — a 💬 button
    appears next to each changed line. Comments are saved as new rows in
-   this tab: URL | DiffId | LineKey | Name | Comment | Timestamp (create
-   the tab with just that header row before turning this on). DiffId is
-   "code" or "faq"; LineKey is the JSON property name the comment is
-   anchored to — both are filled in automatically, never type them by
-   hand. Enabling this upgrades the Google permission the dashboard asks
-   for from read-only to read+write, since posting a comment means
+   this tab: URL | DiffId | LineKey | Context | Name | Comment | Timestamp
+   (create the tab with just that header row before turning this on).
+   DiffId names the section ("View code changes" / "FAQ sync check");
+   LineKey is the JSON property the comment is anchored to; Context is
+   the actual before/after text at the time of posting, so the row is
+   self-explanatory if you're looking at the sheet directly rather than
+   the dashboard. All three are filled in automatically — never type them
+   by hand. Enabling this upgrades the Google permission the dashboard
+   asks for from read-only to read+write, since posting a comment means
    writing to the sheet. Leave blank ("") to keep commenting off and
    stay read-only.
    ============================================================ */

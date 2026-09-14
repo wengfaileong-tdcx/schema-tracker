@@ -7,6 +7,11 @@
   let SOURCE = 'sample';
   const RECENT_DAYS = 14;
 
+  // Written verbatim into the "DiffId" column when a line comment is posted,
+  // so the raw sheet row is readable without opening the dashboard.
+  const DIFF_CODE = 'View code changes';
+  const DIFF_FAQ = 'FAQ sync check';
+
   /* ---------- helpers ---------- */
 
   const parseDate = s => {
@@ -67,7 +72,7 @@
     const tracked = trackedFaqPairs(faqPage);
     const r = D.compare(page.liveFaq, tracked, {
       full: false, sort: true, context: 3, labels: { left: 'Live Site', right: 'Proposed' },
-      commentOpts: { diffId: 'faq', comments: commentsFor(page, 'faq'), canPost: canComment() }
+      commentOpts: { diffId: DIFF_FAQ, comments: commentsFor(page, DIFF_FAQ), canPost: canComment() }
     });
     const inSync = !r.error && !r.add && !r.del;
     return '<div class="block"><details class="fold"' + (inSync ? '' : ' open') + '>' +
@@ -260,7 +265,7 @@
         const page = pageByUrl(d.dataset.diff);
         const vs = ordered(page);
         renderDiffInto(host, vs[1].schema, vs[0].schema, false,
-          { diffId: 'code', comments: commentsFor(page, 'code'), canPost: canComment() });
+          { diffId: DIFF_CODE, comments: commentsFor(page, DIFF_CODE), canPost: canComment() });
         host.dataset.done = '1';
       }
     }
@@ -278,7 +283,7 @@
       t.dataset.full = on;
       t.textContent = on ? 'Show changes only' : 'Show full code';
       renderDiffInto(fold.querySelector('.diffhost'), vs[1].schema, vs[0].schema, !!on,
-        { diffId: 'code', comments: commentsFor(page, 'code'), canPost: canComment() });
+        { diffId: DIFF_CODE, comments: commentsFor(page, DIFF_CODE), canPost: canComment() });
       return;
     }
 
@@ -322,9 +327,14 @@
       const page = t.closest('.page');
       const url = page ? page.dataset.url : '';
       const diffId = panel.dataset.diffId, lineKey = panel.dataset.lineKey;
+      const row = panel.previousElementSibling;
+      const cellTexts = row ? [].slice.call(row.querySelectorAll('.cell .tx')).map(x => x.textContent.trim()) : [];
+      const context = cellTexts.length > 1 && cellTexts[0] !== cellTexts[1]
+        ? cellTexts[0] + '  →  ' + cellTexts[1]
+        : (cellTexts[0] || cellTexts[1] || '');
       msg.textContent = 'Posting…';
       t.disabled = true;
-      window.SchemaApp.onPostComment({ url: url, diffId: diffId, lineKey: lineKey, name: name, text: text }, function (err, entry) {
+      window.SchemaApp.onPostComment({ url: url, diffId: diffId, lineKey: lineKey, context: context, name: name, text: text }, function (err, entry) {
         t.disabled = false;
         if (err) { msg.textContent = 'Could not post: ' + err.message; return; }
         const list = panel.querySelector('.cm-list');
@@ -333,7 +343,6 @@
         list.insertAdjacentHTML('beforeend',
           '<li><div class="cm-meta"><b>' + esc(entry.name) + '</b> · ' + esc(String(entry.ts || '').slice(0, 10)) + '</div>' +
           '<p class="cm-text">' + esc(entry.text) + '</p></li>');
-        const row = panel.previousElementSibling;
         const cmBtn = row && row.querySelector('.ln-cm-btn');
         if (cmBtn) {
           const n = list.querySelectorAll('li').length;

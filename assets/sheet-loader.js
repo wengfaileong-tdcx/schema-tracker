@@ -126,9 +126,12 @@
     ? fetchValues(token, cfg.lineCommentsTab).catch(() => ({ values: [] }))
     : Promise.resolve({ values: [] });
 
-  // "Line Comments" tab layout: URL | DiffId | LineKey | Name | Comment | Timestamp.
-  // DiffId is "code" (the View code changes diff) or "faq" (FAQ sync check);
-  // LineKey is the JSON property name the comment is anchored to.
+  // "Line Comments" tab layout: URL | DiffId | LineKey | Context | Name |
+  // Comment | Timestamp. DiffId names which section the comment is on
+  // ("View code changes" or "FAQ sync check"); LineKey is the JSON property
+  // it's anchored to; Context is the actual before/after text captured at
+  // post time, purely so the raw row is readable without opening the
+  // dashboard — it isn't read back into the app.
   function attachLineComments(data, rows) {
     data.pages.forEach(p => { p.lineComments = {}; });
     if (!rows.length) return data;
@@ -154,13 +157,13 @@
     return data;
   }
 
-  function appendLineComment(token, url, diffId, lineKey, name, text) {
+  function appendLineComment(token, url, diffId, lineKey, context, name, text) {
     const ts = new Date().toISOString();
-    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:F';
+    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:G';
     return api(token, '/values/' + range + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: [[url, diffId, lineKey, name, text, ts]] })
+      body: JSON.stringify({ values: [[url, diffId, lineKey, context, name, text, ts]] })
     }).then(() => ({ name: name, text: text, ts: ts }));
   }
 
@@ -219,7 +222,7 @@
     window.SchemaApp = window.SchemaApp || {};
     window.SchemaApp.onPostComment = function (payload, cb) {
       if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
-      appendLineComment(currentToken, payload.url, payload.diffId, payload.lineKey, payload.name, payload.text)
+      appendLineComment(currentToken, payload.url, payload.diffId, payload.lineKey, payload.context || '', payload.name, payload.text)
         .then(entry => cb(null, entry))
         .catch(err => cb(err));
     };
