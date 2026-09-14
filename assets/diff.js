@@ -186,18 +186,61 @@ window.SchemaDiff = (function () {
   /* ---------- split-view rendering ---------- */
 
   const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const escAttr = s => esc(s).replace(/"/g, '&quot;');
 
   const cell = (txt, num, cls) =>
     '<span class="cell ' + cls + '"><span class="no">' + (num || '') + '</span>' +
     '<span class="tx">' + (txt === null ? '' : esc(txt)) + '</span></span>';
 
+  // Stable-ish per-row key for anchoring a comment to a changed line: the
+  // JSON property name if the line looks like `"name": ...`, else a hash of
+  // its text. A running count disambiguates repeated property names within
+  // one diff (e.g. "audienceType" appearing on several nodes).
+  function hashStr(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return 'h' + (h >>> 0).toString(36);
+  }
+  function lineKeyFor(seen, s) {
+    const t = String(s || '').trim();
+    const m = t.match(/^"([^"]+)":/);
+    const base = m ? m[1] : hashStr(t);
+    const n = (seen[base] = (seen[base] || 0) + 1);
+    return n > 1 ? base + '#' + n : base;
+  }
+
+  function commentButton(diffId, key, count) {
+    return '<button type="button" class="ln-cm-btn" data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '" aria-label="Comment on this change">💬' +
+      (count ? '<span class="ln-cm-count">' + count + '</span>' : '') + '</button>';
+  }
+
+  function commentPanel(diffId, key, comments, canPost) {
+    const items = (comments || []).map(c =>
+      '<li><div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) + '</div>' +
+      '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
+    return '<div class="ln-cm-panel" data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '" hidden>' +
+      '<ul class="cm-list">' + (items || '<li class="cm-empty">No comments yet.</li>') + '</ul>' +
+      (canPost
+        ? '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
+          '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
+          '<div class="foldbar"><button class="mini ln-cm-post" type="button">Post comment</button>' +
+          '<span class="count ln-cm-msg"></span></div></div>'
+        : '<p class="flat">Connect Google Sheet to add a comment.</p>') +
+      '</div>';
+  }
+
   /* d: output of lines(). full: show every unchanged line. context: lines kept either side.
-     labels: optional {left, right} column headings, default Previous/Current. */
-  function splitView(d, full, context, labels) {
+     labels: optional {left, right} column headings, default Previous/Current.
+     commentOpts: optional {diffId, comments: {lineKey: [{name,text,ts}]}, canPost} —
+     when set, adds a comment column next to each changed line. */
+  function splitView(d, full, context, labels, commentOpts) {
     const ctx = context == null ? 3 : context;
     const lab = labels || {};
+    const co = commentOpts || null;
+    const seenKeys = {};
     let h = '<div class="diff"><div class="gut"><span>' + esc(lab.left || 'Previous') +
-      '</span><span>' + esc(lab.right || 'Current') + '</span></div>';
+      '</span><span>' + esc(lab.right || 'Current') + '</span>' +
+      (co ? '<span class="gcm"></span>' : '') + '</div>';
 
     const keep = new Array(d.length).fill(!!full);
     if (!full) d.forEach((x, i) => {
@@ -221,7 +264,15 @@ window.SchemaDiff = (function () {
         const L = dels[k], R = adds[k];
         h += '<div class="row">' +
           (L ? cell(L.s, L.o, 'd') : cell(null, '', 'void')) +
-          (R ? cell(R.s, R.w, 'a') : cell(null, '', 'void')) + '</div>';
+          (R ? cell(R.s, R.w, 'a') : cell(null, '', 'void'));
+        if (co) {
+          const key = lineKeyFor(seenKeys, (R && R.s) || (L && L.s) || '');
+          const list = co.comments[key];
+          h += '<span class="cmcell">' + commentButton(co.diffId, key, list && list.length) + '</span>';
+          h += '</div>' + commentPanel(co.diffId, key, list, co.canPost);
+        } else {
+          h += '</div>';
+        }
       }
       dels = []; adds = [];
     };
@@ -235,7 +286,7 @@ window.SchemaDiff = (function () {
       if (it.t === '-') { dels.push(it); return; }
       if (it.t === '+') { adds.push(it); return; }
       flush();
-      h += '<div class="row">' + cell(it.s, it.o, '') + cell(it.s, it.w, '') + '</div>';
+      h += '<div class="row">' + cell(it.s, it.o, '') + cell(it.s, it.w, '') + (co ? '<span class="cmcell"></span>' : '') + '</div>';
     });
     flush();
     return h + '</div>';
@@ -261,7 +312,7 @@ window.SchemaDiff = (function () {
       add: d.filter(x => x.t === '+').length,
       del: d.filter(x => x.t === '-').length,
       summary: summarise(A.value == null ? null : A.value, B.value),
-      html: splitView(d, !!o.full, o.context, o.labels)
+      html: splitView(d, !!o.full, o.context, o.labels, o.commentOpts)
     };
   }
 

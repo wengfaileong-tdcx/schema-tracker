@@ -80,10 +80,10 @@
     return { site: cfg.site || '', pages: pages, warnings: badCells };
   }
 
-  function api(token, path) {
-    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + path, {
+  function api(token, path, opts) {
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + path, Object.assign({
       headers: { Authorization: 'Bearer ' + token }
-    }).then(r => {
+    }, opts)).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error((e.error && e.error.message) || ('HTTP ' + r.status)); });
       return r.json();
     });
@@ -120,14 +120,58 @@
     return data;
   }
 
+  // Missing "Line Comments" tab shouldn't break the whole load — just means
+  // no comments have been posted yet (or the feature isn't set up).
+  const fetchLineComments = token => cfg.lineCommentsTab
+    ? fetchValues(token, cfg.lineCommentsTab).catch(() => ({ values: [] }))
+    : Promise.resolve({ values: [] });
+
+  // "Line Comments" tab layout: URL | DiffId | LineKey | Name | Comment | Timestamp.
+  // DiffId is "code" (the View code changes diff) or "faq" (FAQ sync check);
+  // LineKey is the JSON property name the comment is anchored to.
+  function attachLineComments(data, rows) {
+    data.pages.forEach(p => { p.lineComments = {}; });
+    if (!rows.length) return data;
+    const head = rows[0].map(x => String(x || '').trim().toLowerCase());
+    const uIdx = head.indexOf('url'), dIdx = head.indexOf('diffid'), lIdx = head.indexOf('linekey'),
+      nIdx = head.indexOf('name'), cIdx = head.indexOf('comment'), tIdx = head.indexOf('timestamp');
+    if (uIdx < 0 || dIdx < 0 || lIdx < 0 || cIdx < 0) return data;
+
+    const byUrl = {};
+    rows.slice(1).forEach(r => {
+      const url = (r[uIdx] || '').trim(), diffId = (r[dIdx] || '').trim(),
+        lineKey = (r[lIdx] || '').trim(), text = (r[cIdx] || '').trim();
+      if (!url || !diffId || !lineKey || !text) return;
+      byUrl[url] = byUrl[url] || {};
+      byUrl[url][diffId] = byUrl[url][diffId] || {};
+      (byUrl[url][diffId][lineKey] = byUrl[url][diffId][lineKey] || []).push({
+        name: nIdx > -1 ? (r[nIdx] || '').trim() : '',
+        text: text,
+        ts: tIdx > -1 ? (r[tIdx] || '').trim() : ''
+      });
+    });
+    data.pages.forEach(p => { if (byUrl[p.url]) p.lineComments = byUrl[p.url]; });
+    return data;
+  }
+
+  function appendLineComment(token, url, diffId, lineKey, name, text) {
+    const ts = new Date().toISOString();
+    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:F';
+    return api(token, '/values/' + range + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [[url, diffId, lineKey, name, text, ts]] })
+    }).then(() => ({ name: name, text: text, ts: ts }));
+  }
+
   let tokenClient = null;
   let currentToken = null;
 
   function loadTab(tab) {
     setStatus('Loading ' + tab + '…');
-    Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken)])
-      .then(([data, faqData]) => {
-        const result = attachFaqLive(rowsToData(data.values || []), faqData.values || []);
+    Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken)])
+      .then(([data, faqData, lineCommentsData]) => {
+        const result = attachLineComments(attachFaqLive(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []);
         window.SchemaApp.setData(result, 'sheet');
         const when = new Date().toLocaleTimeString('en-GB');
         setStatus(result.warnings.length
@@ -146,7 +190,9 @@
     if (!tokenClient) {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: cfg.clientId,
-        scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+        scope: cfg.lineCommentsTab
+          ? 'https://www.googleapis.com/auth/spreadsheets'
+          : 'https://www.googleapis.com/auth/spreadsheets.readonly',
         callback: () => {}
       });
     }
@@ -167,6 +213,16 @@
         .catch(err => setStatus('Could not read spreadsheet: ' + err.message));
     };
     tokenClient.requestAccessToken({ prompt: '' });
+  }
+
+  if (cfg.lineCommentsTab) {
+    window.SchemaApp = window.SchemaApp || {};
+    window.SchemaApp.onPostComment = function (payload, cb) {
+      if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
+      appendLineComment(currentToken, payload.url, payload.diffId, payload.lineKey, payload.name, payload.text)
+        .then(entry => cb(null, entry))
+        .catch(err => cb(err));
+    };
   }
 
   bar.addEventListener('click', e => { if (e.target.id === 'sheet-connect') connect(); });

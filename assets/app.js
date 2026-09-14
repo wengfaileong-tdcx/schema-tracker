@@ -65,7 +65,10 @@
     const faqPage = findFaqPage(cur.schema);
     if (!faqPage || !page.liveFaq) return '';
     const tracked = trackedFaqPairs(faqPage);
-    const r = D.compare(page.liveFaq, tracked, { full: false, sort: true, context: 3, labels: { left: 'Live Site', right: 'Proposed' } });
+    const r = D.compare(page.liveFaq, tracked, {
+      full: false, sort: true, context: 3, labels: { left: 'Live Site', right: 'Proposed' },
+      commentOpts: { diffId: 'faq', comments: commentsFor(page, 'faq'), canPost: canComment() }
+    });
     const inSync = !r.error && !r.add && !r.del;
     return '<div class="block"><details class="fold"' + (inSync ? '' : ' open') + '>' +
       '<summary>FAQ sync check with live site<span class="count"> · ' +
@@ -239,8 +242,11 @@
 
   const pageByUrl = u => DATA.pages.filter(p => p.url === u)[0];
 
-  function renderDiffInto(host, prev, cur, full) {
-    const r = D.compare(prev, cur, { full: full, sort: true, context: 3 });
+  const canComment = () => !!(window.SchemaApp && window.SchemaApp.onPostComment);
+  const commentsFor = (page, diffId) => (page.lineComments && page.lineComments[diffId]) || {};
+
+  function renderDiffInto(host, prev, cur, full, commentOpts) {
+    const r = D.compare(prev, cur, { full: full, sort: true, context: 3, commentOpts: commentOpts });
     host.innerHTML = r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html;
   }
 
@@ -251,8 +257,10 @@
     if (d.dataset.diff) {
       const host = d.querySelector('.diffhost');
       if (host && !host.dataset.done) {
-        const vs = ordered(pageByUrl(d.dataset.diff));
-        renderDiffInto(host, vs[1].schema, vs[0].schema, false);
+        const page = pageByUrl(d.dataset.diff);
+        const vs = ordered(page);
+        renderDiffInto(host, vs[1].schema, vs[0].schema, false,
+          { diffId: 'code', comments: commentsFor(page, 'code'), canPost: canComment() });
         host.dataset.done = '1';
       }
     }
@@ -264,11 +272,13 @@
     /* full-code toggle inside a diff */
     if (t.classList.contains('toggle-full')) {
       const fold = t.closest('.fold');
-      const vs = ordered(pageByUrl(fold.dataset.diff));
+      const page = pageByUrl(fold.dataset.diff);
+      const vs = ordered(page);
       const on = t.dataset.full === '1' ? 0 : 1;
       t.dataset.full = on;
       t.textContent = on ? 'Show changes only' : 'Show full code';
-      renderDiffInto(fold.querySelector('.diffhost'), vs[1].schema, vs[0].schema, !!on);
+      renderDiffInto(fold.querySelector('.diffhost'), vs[1].schema, vs[0].schema, !!on,
+        { diffId: 'code', comments: commentsFor(page, 'code'), canPost: canComment() });
       return;
     }
 
@@ -292,6 +302,47 @@
         try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
         done(ok);
       }
+      return;
+    }
+
+    /* toggle a line comment panel open/closed */
+    const lnBtn = t.closest('.ln-cm-btn');
+    if (lnBtn) {
+      const panel = lnBtn.closest('.row').nextElementSibling;
+      if (panel && panel.classList.contains('ln-cm-panel')) panel.hidden = !panel.hidden;
+      return;
+    }
+
+    /* post a line comment */
+    if (t.classList.contains('ln-cm-post')) {
+      const panel = t.closest('.ln-cm-panel');
+      const nameEl = panel.querySelector('.cm-name'), bodyEl = panel.querySelector('.cm-body'), msg = panel.querySelector('.ln-cm-msg');
+      const name = nameEl.value.trim(), text = bodyEl.value.trim();
+      if (!name || !text) { msg.textContent = 'Enter your name and a comment.'; return; }
+      const page = t.closest('.page');
+      const url = page ? page.dataset.url : '';
+      const diffId = panel.dataset.diffId, lineKey = panel.dataset.lineKey;
+      msg.textContent = 'Posting…';
+      t.disabled = true;
+      window.SchemaApp.onPostComment({ url: url, diffId: diffId, lineKey: lineKey, name: name, text: text }, function (err, entry) {
+        t.disabled = false;
+        if (err) { msg.textContent = 'Could not post: ' + err.message; return; }
+        const list = panel.querySelector('.cm-list');
+        const empty = list.querySelector('.cm-empty');
+        if (empty) empty.remove();
+        list.insertAdjacentHTML('beforeend',
+          '<li><div class="cm-meta"><b>' + esc(entry.name) + '</b> · ' + esc(String(entry.ts || '').slice(0, 10)) + '</div>' +
+          '<p class="cm-text">' + esc(entry.text) + '</p></li>');
+        const row = panel.previousElementSibling;
+        const cmBtn = row && row.querySelector('.ln-cm-btn');
+        if (cmBtn) {
+          const n = list.querySelectorAll('li').length;
+          const countEl = cmBtn.querySelector('.ln-cm-count');
+          if (countEl) countEl.textContent = n;
+          else cmBtn.insertAdjacentHTML('beforeend', '<span class="ln-cm-count">' + n + '</span>');
+        }
+        nameEl.value = ''; bodyEl.value = ''; msg.textContent = 'Posted.';
+      });
       return;
     }
 

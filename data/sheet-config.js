@@ -30,6 +30,18 @@
    FAQPage block and this tab has a matching URL, the dashboard shows a
    "FAQ sync check" comparing the live page's Q&A against the tracked
    schema. Leave blank to skip this entirely.
+
+   lineCommentsTab (optional): turns on commenting directly on a changed
+   line inside "View code changes" or "FAQ sync check" — a 💬 button
+   appears next to each changed line. Comments are saved as new rows in
+   this tab: URL | DiffId | LineKey | Name | Comment | Timestamp (create
+   the tab with just that header row before turning this on). DiffId is
+   "code" or "faq"; LineKey is the JSON property name the comment is
+   anchored to — both are filled in automatically, never type them by
+   hand. Enabling this upgrades the Google permission the dashboard asks
+   for from read-only to read+write, since posting a comment means
+   writing to the sheet. Leave blank ("") to keep commenting off and
+   stay read-only.
    ============================================================ */
 
 window.SHEET_CONFIG = {
@@ -37,5 +49,6 @@ window.SHEET_CONFIG = {
   clientId: "369422014820-1kou8ivk7s0nd8411qtrh65q9sejbbeb.apps.googleusercontent.com",
   spreadsheetId: "1ca7noantQV3pbxobG1ByidyN27O8DACAm0ehgys0JP4",
   range: "Sheet1",
-  faqTab: "FAQ Live"
+  faqTab: "FAQ Live",
+  lineCommentsTab: "Line Comments"
 };
