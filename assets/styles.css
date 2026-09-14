@@ -117,6 +117,7 @@ ol.vh .vs{font-size:13.5px;flex:1;min-width:160px}
 .vdetail{padding:2px 4px 14px}
 
 .flat{font-size:13.5px;color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:11px 14px}
+.hint{font-size:12.5px;color:var(--muted);margin:0 0 10px}
 .err{background:var(--del-bg);border:1px solid var(--del-mark);color:var(--del-ink);border-radius:4px;padding:11px 14px;font-size:13.5px}
 .empty{background:var(--paper);border:1px dashed var(--rule);border-radius:6px;padding:34px 20px;text-align:center;color:var(--muted)}
 footer{margin-top:26px;font-size:12.5px;color:var(--muted)}

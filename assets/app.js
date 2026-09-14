@@ -43,6 +43,39 @@
   const chgList = items =>
     '<ul class="chg">' + items.map(t => '<li class="' + cls(t) + '">' + esc(t) + '</li>').join('') + '</ul>';
 
+  /* ---------- FAQ sync check (tracked FAQPage schema vs. live page) ---------- */
+
+  // Finds an FAQPage node anywhere in a schema value, including inside @graph.
+  function findFaqPage(schema) {
+    if (!schema || typeof schema !== 'object') return null;
+    const nodes = Array.isArray(schema) ? schema : schema['@graph'] ? schema['@graph'] : [schema];
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n && [].concat(n['@type'] || []).indexOf('FAQPage') > -1) return n;
+    }
+    return null;
+  }
+
+  const trackedFaqPairs = faqPage => (faqPage.mainEntity || []).map(q => ({
+    q: q.name || '',
+    a: (q.acceptedAnswer && q.acceptedAnswer.text) || ''
+  }));
+
+  function faqSyncBlock(page, cur) {
+    const faqPage = findFaqPage(cur.schema);
+    if (!faqPage || !page.liveFaq) return '';
+    const tracked = trackedFaqPairs(faqPage);
+    const r = D.compare(tracked, page.liveFaq, { full: false, sort: true, context: 3 });
+    const inSync = !r.error && !r.add && !r.del;
+    return '<div class="block"><details class="fold"' + (inSync ? '' : ' open') + '>' +
+      '<summary>FAQ sync check<span class="count"> · ' +
+      (r.error ? 'error' : inSync ? 'in sync' : 'out of sync') + '</span></summary>' +
+      '<div class="inner">' +
+      '<p class="hint">Tracked FAQPage schema (left) vs. what is currently live on the page (right).</p>' +
+      (r.error ? '<div class="err">' + esc(r.error) + '</div>' : (inSync ? '<div class="flat">No difference found.</div>' : r.html)) +
+      '</div></details></div>';
+  }
+
   /* ---------- render one page row ---------- */
 
   function pageRow(page) {
@@ -81,6 +114,9 @@
       h += '<div class="flat">Only one version recorded, so there is nothing to compare yet.</div>';
     }
     h += '</div>';
+
+    /* 1b. FAQ sync check, only when both a tracked FAQPage and live data exist */
+    h += faqSyncBlock(page, cur);
 
     /* 2. full current schema */
     h += '<div class="block">' +

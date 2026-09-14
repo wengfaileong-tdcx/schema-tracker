@@ -94,14 +94,40 @@
 
   const fetchValues = (token, tab) => api(token, '/values/' + encodeURIComponent(tab));
 
+  // Missing "FAQ Live" tab shouldn't break the whole load — just means no
+  // live-FAQ data is available yet.
+  const fetchFaqLive = token => cfg.faqTab
+    ? fetchValues(token, cfg.faqTab).catch(() => ({ values: [] }))
+    : Promise.resolve({ values: [] });
+
+  // "FAQ Live" tab layout: URL | Live FAQ (a JSON array of {q,a} written
+  // by the LIVE_FAQ() Apps Script function — see sheet-scripts/faq-live.gs).
+  function attachFaqLive(data, rows) {
+    if (!rows.length) return data;
+    const head = rows[0].map(x => String(x || '').trim().toLowerCase());
+    const uIdx = head.indexOf('url');
+    const fIdx = head.findIndex(h => h.indexOf('faq') > -1);
+    if (uIdx < 0 || fIdx < 0) return data;
+
+    const byUrl = {};
+    rows.slice(1).forEach(r => {
+      const url = (r[uIdx] || '').trim();
+      const raw = (r[fIdx] || '').trim();
+      if (!url || !raw || raw.indexOf('ERROR') === 0) return;
+      try { byUrl[url] = JSON.parse(raw); } catch (e) { /* leave unset — malformed cell */ }
+    });
+    data.pages.forEach(p => { if (byUrl[p.url]) p.liveFaq = byUrl[p.url]; });
+    return data;
+  }
+
   let tokenClient = null;
   let currentToken = null;
 
   function loadTab(tab) {
     setStatus('Loading ' + tab + '…');
-    fetchValues(currentToken, tab)
-      .then(data => {
-        const result = rowsToData(data.values || []);
+    Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken)])
+      .then(([data, faqData]) => {
+        const result = attachFaqLive(rowsToData(data.values || []), faqData.values || []);
         window.SchemaApp.setData(result, 'sheet');
         const when = new Date().toLocaleTimeString('en-GB');
         setStatus(result.warnings.length

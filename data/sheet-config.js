@@ -23,11 +23,19 @@
    dashboard to switch between them (e.g. tracking multiple sites in
    one file). "range" below just picks which tab loads by default —
    it must match a real tab name exactly.
+
+   faqTab (optional): name of a tab with columns URL | Live FAQ, where
+   Live FAQ is filled by the LIVE_FAQ() Apps Script function (see
+   sheet-scripts/faq-live.gs). When a page's tracked schema contains an
+   FAQPage block and this tab has a matching URL, the dashboard shows a
+   "FAQ sync check" comparing the live page's Q&A against the tracked
+   schema. Leave blank to skip this entirely.
    ============================================================ */
 
 window.SHEET_CONFIG = {
   enabled: true,
   clientId: "369422014820-1kou8ivk7s0nd8411qtrh65q9sejbbeb.apps.googleusercontent.com",
   spreadsheetId: "1ca7noantQV3pbxobG1ByidyN27O8DACAm0ehgys0JP4",
-  range: "Sheet1"
+  range: "Sheet1",
+  faqTab: "FAQ Live"
 };
