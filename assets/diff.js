@@ -188,9 +188,38 @@ window.SchemaDiff = (function () {
   const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const escAttr = s => esc(s).replace(/"/g, '&quot;');
 
-  const cell = (txt, num, cls) =>
+  // html, when given, is already-escaped markup for the line — used to mark
+  // the changed words inside an otherwise unchanged line.
+  const cell = (txt, num, cls, html) =>
     '<span class="cell ' + cls + '"><span class="no">' + (num || '') + '</span>' +
-    '<span class="tx">' + (txt === null ? '' : esc(txt)) + '</span></span>';
+    '<span class="tx">' + (html != null ? html : txt === null ? '' : esc(txt)) + '</span></span>';
+
+  // Words, whitespace runs and single punctuation each become a token, so a
+  // value edit marks just the word that moved rather than the whole line.
+  const tokenize = s => String(s).match(/\w+|\s+|[^\w\s]/g) || [];
+
+  // Marks the parts of a modified line that actually differ. Whitespace that
+  // sits between two marked runs is marked too, otherwise a multi-word edit
+  // renders as stripes.
+  function inlineMark(a, b) {
+    const d = lines(tokenize(a), tokenize(b));
+    const side = (which, keep) => {
+      const parts = d.filter(x => x.t === '=' || x.t === which);
+      const changed = parts.map(x => x.t === which);
+      parts.forEach((x, i) => {
+        if (changed[i] || !/^\s+$/.test(x.s)) return;
+        if (changed[i - 1] && changed[i + 1]) changed[i] = true;
+      });
+      let out = '', open = false;
+      parts.forEach((x, i) => {
+        if (changed[i] && !open) { out += '<span class="hl">'; open = true; }
+        if (!changed[i] && open) { out += '</span>'; open = false; }
+        out += esc(x.s);
+      });
+      return out + (open ? '</span>' : '');
+    };
+    return { l: side('-'), r: side('+') };
+  }
 
   // Stable per-row key for anchoring a comment to a line: the JSON property
   // name if the line looks like `"name": ...`, else a hash of its text. A
@@ -299,9 +328,12 @@ window.SchemaDiff = (function () {
       for (let k = 0; k < n; k++) {
         const L = dels[k], R = adds[k];
         const anchor = R || L;
+        // With a line on both sides it's an edit, so mark just the words that
+        // changed. A line on one side only is wholly added or removed.
+        const m = L && R ? inlineMark(L.s, R.s) : null;
         h += '<div class="row">' +
-          (L ? cell(L.s, L.o, 'd') : cell(null, '', 'void')) +
-          (R ? cell(R.s, R.w, 'a') : cell(null, '', 'void')) +
+          (L ? cell(L.s, L.o, 'd', m && m.l) : cell(null, '', 'void')) +
+          (R ? cell(R.s, R.w, 'a', m && m.r) : cell(null, '', 'void')) +
           cmCell(anchor) + '</div>' + cmPanel(anchor);
       }
       dels = []; adds = [];
