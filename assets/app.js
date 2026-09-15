@@ -133,7 +133,7 @@
       '<div class="foldbar"><span class="count">' + esc(cur.version) + ' · live now</span>' +
       '<span class="spacer"></span>' +
       '<button class="mini copy-schema" type="button">Copy schema</button></div>' +
-      '<pre class="code">' + esc(D.pretty(cur.schema, false)) + '</pre>' +
+      selectionCodeBlock(page, 'Schema: ' + cur.version, cur.schema) +
       '</div></details></div>';
 
     /* 3. compare any two versions */
@@ -250,6 +250,36 @@
   const canComment = () => !!(window.SchemaApp && window.SchemaApp.onPostComment);
   const commentsFor = (page, diffId) => (page.lineComments && page.lineComments[diffId]) || {};
 
+  /* ---------- select-and-comment on a full-code block ---------- */
+
+  const SEL_KEY = 'note'; // one flat comment thread per code block; each entry quotes its own selection
+
+  // A full-code <pre> the viewer can select text in and comment on that
+  // exact selection. Comments reuse the Line Comments sheet/hook — the
+  // selected text is stored in the same "context" field used elsewhere.
+  function selectionCodeBlock(page, diffId, schema) {
+    const items = (commentsFor(page, diffId)[SEL_KEY]) || [];
+    const canPost = canComment();
+    const list = items.map(c =>
+      '<li><div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) + '</div>' +
+      (c.context ? '<blockquote class="sel-quote">' + esc(c.context) + '</blockquote>' : '') +
+      '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
+
+    return '<pre class="code" data-sel-scope="' + esc(diffId) + '">' + esc(D.pretty(schema, false)) + '</pre>' +
+      '<div class="sel-cm" data-sel-scope="' + esc(diffId) + '">' +
+      (canPost ? '<button type="button" class="mini sel-cm-trigger">Comment on selected text</button>' : '') +
+      '<div class="sel-cm-box" hidden>' +
+      '<p class="hint sel-cm-msg">Select some text in the code above, then click "Comment on selected text" again.</p>' +
+      '<blockquote class="sel-quote sel-cm-quote"></blockquote>' +
+      '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
+      '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
+      '<div class="foldbar"><button class="mini sel-cm-post" type="button">Post comment</button>' +
+      '<span class="count sel-cm-postmsg"></span></div></div>' +
+      '</div>' +
+      (items.length ? '<ul class="cm-list sel-cm-list">' + list + '</ul>' : '') +
+      '</div>';
+  }
+
   function renderDiffInto(host, prev, cur, full, commentOpts) {
     const r = D.compare(prev, cur, { full: full, sort: true, context: 3, commentOpts: commentOpts });
     host.innerHTML = r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html;
@@ -355,6 +385,66 @@
       return;
     }
 
+    /* open the selection-comment composer, using whatever text is currently selected */
+    if (t.classList.contains('sel-cm-trigger')) {
+      const wrap = t.closest('.sel-cm');
+      const scope = wrap.dataset.selScope;
+      const codeEl = wrap.previousElementSibling; // the matching pre.code, rendered just before this block
+      const box = wrap.querySelector('.sel-cm-box');
+      const sel = window.getSelection();
+      const text = sel && sel.rangeCount ? sel.toString().trim() : '';
+      const container = sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+      const inScope = container && (container.nodeType === 3 ? container.parentElement : container).closest &&
+        (container.nodeType === 3 ? container.parentElement : container).closest('pre.code[data-sel-scope="' + scope.replace(/"/g, '\\"') + '"]') === codeEl;
+      box.hidden = false;
+      const msg = box.querySelector('.sel-cm-msg');
+      const quote = box.querySelector('.sel-cm-quote');
+      if (!text || !inScope) {
+        msg.hidden = false;
+        quote.hidden = true;
+        box.dataset.snippet = '';
+      } else {
+        msg.hidden = true;
+        quote.hidden = false;
+        quote.textContent = text;
+        box.dataset.snippet = text;
+        box.querySelector('.cm-body').focus();
+      }
+      return;
+    }
+
+    /* post a selection comment */
+    if (t.classList.contains('sel-cm-post')) {
+      const box = t.closest('.sel-cm-box');
+      const wrap = t.closest('.sel-cm');
+      const nameEl = box.querySelector('.cm-name'), bodyEl = box.querySelector('.cm-body'), msg = box.querySelector('.sel-cm-postmsg');
+      const name = nameEl.value.trim(), text = bodyEl.value.trim();
+      if (!name || !text) { msg.textContent = 'Enter your name and a comment.'; return; }
+      if (!box.dataset.snippet) { msg.textContent = 'Select some text in the code above first.'; return; }
+      const page = t.closest('.page');
+      const url = page ? page.dataset.url : '';
+      const diffId = wrap.dataset.selScope;
+      msg.textContent = 'Posting…';
+      t.disabled = true;
+      window.SchemaApp.onPostComment({ url: url, diffId: diffId, lineKey: SEL_KEY, context: box.dataset.snippet, name: name, text: text }, function (err, entry) {
+        t.disabled = false;
+        if (err) { msg.textContent = 'Could not post: ' + err.message; return; }
+        let list = wrap.querySelector('.sel-cm-list');
+        if (!list) {
+          list = document.createElement('ul');
+          list.className = 'cm-list sel-cm-list';
+          wrap.appendChild(list);
+        }
+        list.insertAdjacentHTML('beforeend',
+          '<li><div class="cm-meta"><b>' + esc(entry.name) + '</b> · ' + esc(String(entry.ts || '').slice(0, 10)) + '</div>' +
+          (box.dataset.snippet ? '<blockquote class="sel-quote">' + esc(box.dataset.snippet) + '</blockquote>' : '') +
+          '<p class="cm-text">' + esc(entry.text) + '</p></li>');
+        nameEl.value = ''; bodyEl.value = ''; msg.textContent = 'Posted.';
+        box.hidden = true;
+      });
+      return;
+    }
+
     /* version history row */
     const vbtn = t.closest('button.v');
     if (vbtn) {
@@ -372,7 +462,7 @@
       let h = chgList(summaryFor(page, i));
       if (v.note) h += '<p class="flat" style="margin-top:9px">' + esc(v.note) + '</p>';
       h += '<details class="fold"><summary>View schema for ' + esc(v.version) + '</summary>' +
-        '<div class="inner"><pre class="code">' + esc(D.pretty(v.schema, false)) + '</pre></div></details>';
+        '<div class="inner">' + selectionCodeBlock(page, 'Schema: ' + v.version, v.schema) + '</div></details>';
       if (prev) {
         const r = D.compare(prev.schema, v.schema, { full: false, sort: true, context: 3 });
         h += '<details class="fold"><summary>Compare with ' + esc(prev.version) + '</summary>' +

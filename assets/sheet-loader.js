@@ -128,16 +128,18 @@
 
   // "Line Comments" tab layout: URL | DiffId | LineKey | Context | Name |
   // Comment | Timestamp. DiffId names which section the comment is on
-  // ("View code changes" or "FAQ sync check"); LineKey is the JSON property
-  // it's anchored to; Context is the actual before/after text captured at
-  // post time, purely so the raw row is readable without opening the
-  // dashboard — it isn't read back into the app.
+  // ("View code changes" / "FAQ sync check" / "Schema: <version>"); LineKey
+  // is the JSON property (or, for a full-code selection comment, the fixed
+  // key "note") it's anchored to; Context is the exact text a comment
+  // refers to — the diff line's before/after for a line comment, or the
+  // selected snippet for a selection comment — read back so the dashboard
+  // can display what was actually highlighted.
   function attachLineComments(data, rows) {
     data.pages.forEach(p => { p.lineComments = {}; });
     if (!rows.length) return data;
     const head = rows[0].map(x => String(x || '').trim().toLowerCase());
     const uIdx = head.indexOf('url'), dIdx = head.indexOf('diffid'), lIdx = head.indexOf('linekey'),
-      nIdx = head.indexOf('name'), cIdx = head.indexOf('comment'), tIdx = head.indexOf('timestamp');
+      xIdx = head.indexOf('context'), nIdx = head.indexOf('name'), cIdx = head.indexOf('comment'), tIdx = head.indexOf('timestamp');
     if (uIdx < 0 || dIdx < 0 || lIdx < 0 || cIdx < 0) return data;
 
     const byUrl = {};
@@ -150,6 +152,7 @@
       (byUrl[url][diffId][lineKey] = byUrl[url][diffId][lineKey] || []).push({
         name: nIdx > -1 ? (r[nIdx] || '').trim() : '',
         text: text,
+        context: xIdx > -1 ? (r[xIdx] || '').trim() : '',
         ts: tIdx > -1 ? (r[tIdx] || '').trim() : ''
       });
     });

@@ -118,6 +118,13 @@ ul.cm-list li.cm-empty{color:var(--muted);font-size:13px}
 .cm-form input,.cm-form textarea{margin-bottom:8px;font-family:var(--sans)}
 .cm-form textarea{resize:vertical}
 
+/* ---------- select-and-comment on full-code blocks ---------- */
+pre.code[data-sel-scope]{user-select:text}
+.sel-cm{font-family:var(--sans);margin-top:9px}
+.sel-cm-box{margin-top:9px;border:1px solid var(--rule);border-radius:5px;padding:11px 13px;background:#fafbfc}
+.sel-quote{margin:0 0 9px;padding:6px 10px;border-left:3px solid var(--focus);background:#eef2f6;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word}
+.sel-cm-list .sel-quote{border-left-color:var(--rule);background:#f7f8f9}
+
 pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.6;background:#fafbfc;border:1px solid var(--rule);border-radius:4px;padding:12px 14px;margin:0;max-height:460px;overflow:auto;white-space:pre}
 
 /* ---------- version history ---------- */
