@@ -628,6 +628,16 @@
     this.textContent = anyClosed ? 'Collapse all' : 'Expand all';
   });
 
+  /* back to top — a long diff leaves the index far out of reach */
+  const toTop = $('totop');
+  const showToTop = () => { toTop.hidden = window.pageYOffset < 400; };
+  window.addEventListener('scroll', showToTop, { passive: true });
+  toTop.addEventListener('click', function () {
+    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+  });
+  showToTop();
+
   function drawBanner() {
     // When a sheet is connected the header's status card already says so, and
     // a second banner just adds noise — only warn about sample data.

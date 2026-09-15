@@ -54,6 +54,15 @@ button.mini{font-size:12.5px;padding:5px 10px}
 .btn-ghost{display:inline-flex;align-items:center;gap:4px;color:var(--focus);border-color:var(--rule);font-size:13.5px;font-weight:500}
 .count{font-size:13px;color:var(--muted);white-space:nowrap;padding-bottom:9px}
 
+/* ---------- back to top ---------- */
+.totop{position:fixed;right:20px;bottom:20px;z-index:20;display:flex;align-items:center;gap:7px;
+  padding:9px 15px 9px 12px;border-radius:22px;background:var(--paper);border:1px solid var(--rule);
+  font-size:13px;font-weight:500;color:var(--ink);box-shadow:0 3px 10px rgba(16,24,40,.13)}
+.totop:hover{background:#f7f9fa;border-color:#cfd6e0}
+.totop-a{width:8px;height:8px;border-left:1.9px solid var(--focus);border-top:1.9px solid var(--focus);
+  transform:rotate(45deg);position:relative;top:2px}
+@media(max-width:560px){.totop{right:14px;bottom:14px}}
+
 /* chevrons */
 .chev{width:7px;height:7px;border-right:1.8px solid #98a2b3;border-bottom:1.8px solid #98a2b3;
   transform:rotate(45deg);flex:0 0 auto;margin-left:2px}
