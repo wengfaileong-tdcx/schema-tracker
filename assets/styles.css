@@ -124,6 +124,12 @@ ul.cm-list li.cm-empty{color:var(--muted);font-size:13px}
 .cm-form input,.cm-form textarea{margin-bottom:8px;font-family:var(--sans)}
 .cm-form textarea{resize:vertical}
 
+/* resolved comments stay readable but visibly settled */
+ul.cm-list li.cm-resolved{opacity:.55}
+ul.cm-list li.cm-resolved .cm-text{text-decoration:line-through;text-decoration-color:var(--muted)}
+.cm-done{color:var(--add-ink);font-weight:600}
+.ln-cm-btn.all-done{opacity:.5}
+
 /* the highlighted text a comment refers to, quoted in the comment panel */
 .sel-quote{margin:0 0 9px;padding:6px 10px;border-left:3px solid var(--focus);background:#eef2f6;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word}
 ul.cm-list .sel-quote{border-left-color:var(--rule);background:#f7f8f9}

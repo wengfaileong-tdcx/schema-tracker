@@ -34,8 +34,11 @@
    lineCommentsTab (optional): turns on commenting directly on a changed
    line inside "View code changes" or "FAQ sync check" — a 💬 button
    appears next to each changed line. Comments are saved as new rows in
-   this tab: URL | DiffId | LineKey | Context | Name | Comment | Timestamp
-   (create the tab with just that header row before turning this on).
+   this tab: URL | DiffId | LineKey | Context | Name | Comment | Timestamp |
+   Resolved (create the tab with just that header row before turning this on).
+   Resolved is yours to tick by hand once a comment has been dealt with —
+   anything non-empty counts as done, and those comments then show struck
+   through and stop counting on the line's comment badge.
    DiffId names the section ("View code changes" / "FAQ sync check");
    LineKey is the JSON property the comment is anchored to; Context is
    the actual before/after text at the time of posting, so the row is

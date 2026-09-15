@@ -127,19 +127,24 @@
     : Promise.resolve({ values: [] });
 
   // "Line Comments" tab layout: URL | DiffId | LineKey | Context | Name |
-  // Comment | Timestamp. DiffId names which section the comment is on
-  // ("View code changes" / "FAQ sync check" / "Schema: <version>"); LineKey
-  // is the JSON property (or, for a full-code selection comment, the fixed
-  // key "note") it's anchored to; Context is the exact text a comment
-  // refers to — the diff line's before/after for a line comment, or the
-  // selected snippet for a selection comment — read back so the dashboard
-  // can display what was actually highlighted.
+  // Comment | Timestamp | Resolved. DiffId names which section the comment
+  // is on ("View code changes" / "FAQ sync check"); LineKey is the JSON
+  // property it's anchored to; Context is the exact text it refers to —
+  // the highlighted selection, or the line's before/after — read back so
+  // the dashboard can show what was flagged. Resolved is optional and
+  // ticked by hand in the sheet; anything non-empty there counts as done.
+  const isTruthyCell = v => {
+    const s = String(v || '').trim().toLowerCase();
+    return !!s && s !== 'false' && s !== 'no' && s !== '0';
+  };
+
   function attachLineComments(data, rows) {
     data.pages.forEach(p => { p.lineComments = {}; });
     if (!rows.length) return data;
     const head = rows[0].map(x => String(x || '').trim().toLowerCase());
     const uIdx = head.indexOf('url'), dIdx = head.indexOf('diffid'), lIdx = head.indexOf('linekey'),
-      xIdx = head.indexOf('context'), nIdx = head.indexOf('name'), cIdx = head.indexOf('comment'), tIdx = head.indexOf('timestamp');
+      xIdx = head.indexOf('context'), nIdx = head.indexOf('name'), cIdx = head.indexOf('comment'),
+      tIdx = head.indexOf('timestamp'), rIdx = head.indexOf('resolved');
     if (uIdx < 0 || dIdx < 0 || lIdx < 0 || cIdx < 0) return data;
 
     const byUrl = {};
@@ -153,7 +158,8 @@
         name: nIdx > -1 ? (r[nIdx] || '').trim() : '',
         text: text,
         context: xIdx > -1 ? (r[xIdx] || '').trim() : '',
-        ts: tIdx > -1 ? (r[tIdx] || '').trim() : ''
+        ts: tIdx > -1 ? (r[tIdx] || '').trim() : '',
+        resolved: rIdx > -1 && isTruthyCell(r[rIdx])
       });
     });
     data.pages.forEach(p => { if (byUrl[p.url]) p.lineComments = byUrl[p.url]; });
@@ -162,11 +168,12 @@
 
   function appendLineComment(token, url, diffId, lineKey, context, name, text) {
     const ts = new Date().toISOString();
-    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:G';
+    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:H';
     return api(token, '/values/' + range + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: [[url, diffId, lineKey, context, name, text, ts]] })
+      // Trailing '' leaves Resolved blank — a new comment is always open.
+      body: JSON.stringify({ values: [[url, diffId, lineKey, context, name, text, ts, '']] })
     }).then(() => ({ name: name, text: text, ts: ts }));
   }
 

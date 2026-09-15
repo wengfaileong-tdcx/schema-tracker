@@ -216,16 +216,21 @@ window.SchemaDiff = (function () {
     return map;
   }
 
-  function commentButton(diffId, key, count) {
-    return '<button type="button" class="ln-cm-btn' + (count ? ' has-cm' : '') + '"' +
+  // open: unresolved comments (shown as the badge). total: all comments, so a
+  // line with only resolved ones still shows its icon, just without a badge.
+  function commentButton(diffId, key, open, total) {
+    const has = total || open;
+    return '<button type="button" class="ln-cm-btn' + (has ? ' has-cm' : '') + (open ? '' : ' all-done') + '"' +
       ' data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '"' +
       ' aria-label="Comment on this line">💬' +
-      (count ? '<span class="ln-cm-count">' + count + '</span>' : '') + '</button>';
+      (open ? '<span class="ln-cm-count">' + open + '</span>' : '') + '</button>';
   }
 
   function commentPanel(diffId, key, comments, canPost) {
     const items = (comments || []).map(c =>
-      '<li><div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) + '</div>' +
+      '<li' + (c.resolved ? ' class="cm-resolved"' : '') + '>' +
+      '<div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) +
+      (c.resolved ? ' · <span class="cm-done">Resolved</span>' : '') + '</div>' +
       (c.context ? '<blockquote class="sel-quote">' + esc(c.context) + '</blockquote>' : '') +
       '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
     return '<div class="ln-cm-panel" data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '" hidden>' +
@@ -253,11 +258,14 @@ window.SchemaDiff = (function () {
     // A row's comment cell: the icon (shown on hover/selection, or always if
     // it already has comments) plus, only where comments exist, the panel.
     // Panels for everything else are created on demand when the icon is used.
+    // The badge counts only unresolved comments, so a line whose comments are
+    // all dealt with reads as clear at a glance.
     const cmCell = entry => {
       if (!co) return '';
       const key = keys.get(entry);
       const list = co.comments[key];
-      return '<span class="cmcell">' + commentButton(co.diffId, key, list && list.length) + '</span>';
+      const open = list ? list.filter(c => !c.resolved).length : 0;
+      return '<span class="cmcell">' + commentButton(co.diffId, key, open, list && list.length) + '</span>';
     };
     const cmPanel = entry => {
       if (!co) return '';
