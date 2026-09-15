@@ -81,7 +81,6 @@
       '<div class="inner">' +
       '<p class="hint">What is currently live on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).</p>' +
       (r.error ? '<div class="err">' + esc(r.error) + '</div>' : (inSync ? '<div class="flat">No difference found.</div>' : r.html)) +
-      selectionCommentUI(page, DIFF_FAQ) +
       '</div></details></div>';
   }
 
@@ -118,8 +117,7 @@
         '<div class="foldbar"><span class="count">' + esc(vs[1].version) + ' → ' + esc(cur.version) + '</span>' +
         '<span class="spacer"></span>' +
         '<button class="mini toggle-full" type="button" data-full="0">Show full code</button></div>' +
-        '<div class="diffhost"></div>' + selectionCommentUI(page, DIFF_CODE) +
-        '</div></details>';
+        '<div class="diffhost"></div></div></details>';
     } else {
       h += '<div class="flat">Only one version recorded, so there is nothing to compare yet.</div>';
     }
@@ -135,7 +133,7 @@
       '<div class="foldbar"><span class="count">' + esc(cur.version) + ' · live now</span>' +
       '<span class="spacer"></span>' +
       '<button class="mini copy-schema" type="button">Copy schema</button></div>' +
-      selectionCodeBlock(page, 'Schema: ' + cur.version, cur.schema) +
+      '<pre class="code">' + esc(D.pretty(cur.schema, false)) + '</pre>' +
       '</div></details></div>';
 
     /* 3. compare any two versions */
@@ -252,39 +250,34 @@
   const canComment = () => !!(window.SchemaApp && window.SchemaApp.onPostComment);
   const commentsFor = (page, diffId) => (page.lineComments && page.lineComments[diffId]) || {};
 
-  /* ---------- select-and-comment on a full-code block ---------- */
+  /* ---------- highlight-to-comment inside a diff ---------- */
 
-  const SEL_KEY = 'note'; // one flat comment thread per code block; each entry quotes its own selection
-
-  // Comment UI for whatever code block is rendered immediately before it —
-  // a full-code <pre>, a diff split view, anything. The viewer selects text
-  // in that block and comments on that exact selection; the selected text is
-  // stored in the same "context" field the Line Comments sheet already has.
-  function selectionCommentUI(page, diffId) {
-    const items = (commentsFor(page, diffId)[SEL_KEY]) || [];
-    const canPost = canComment();
-    const list = items.map(c =>
-      '<li><div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) + '</div>' +
-      (c.context ? '<blockquote class="sel-quote">' + esc(c.context) + '</blockquote>' : '') +
-      '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
-
-    return '<div class="sel-cm" data-sel-scope="' + esc(diffId) + '">' +
-      (canPost ? '<button type="button" class="mini sel-cm-trigger">Comment on selected text</button>' : '') +
-      '<div class="sel-cm-box" hidden>' +
-      '<p class="hint sel-cm-msg">Select some text above, then click “Comment on selected text” again.</p>' +
-      '<blockquote class="sel-quote sel-cm-quote"></blockquote>' +
-      '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
-      '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
-      '<div class="foldbar"><button class="mini sel-cm-post" type="button">Post comment</button>' +
-      '<span class="count sel-cm-postmsg"></span></div></div>' +
-      '</div>' +
-      (items.length ? '<ul class="cm-list sel-cm-list">' + list + '</ul>' : '') +
-      '</div>';
+  // Reveal the comment icon on whichever rows the current text selection
+  // touches, so highlighting part of the code offers to comment on it.
+  function markSelectedRows() {
+    document.querySelectorAll('.row.sel-hit').forEach(r => r.classList.remove('sel-hit'));
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    const node = range.commonAncestorContainer;
+    const host = (node.nodeType === 3 ? node.parentElement : node).closest('.diff');
+    if (!host) return;
+    host.querySelectorAll('.row').forEach(row => {
+      if (range.intersectsNode(row)) row.classList.add('sel-hit');
+    });
   }
 
-  const selectionCodeBlock = (page, diffId, schema) =>
-    '<pre class="code" data-sel-scope="' + esc(diffId) + '">' + esc(D.pretty(schema, false)) + '</pre>' +
-    selectionCommentUI(page, diffId);
+  document.addEventListener('mouseup', () => setTimeout(markSelectedRows, 0));
+  document.addEventListener('keyup', e => { if (e.shiftKey || e.key === 'Escape') markSelectedRows(); });
+
+  // The text currently selected within this row, if any — that's what a
+  // comment posted from this row should quote.
+  function selectionWithin(row) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return '';
+    const range = sel.getRangeAt(0);
+    return range.intersectsNode(row) ? sel.toString().trim() : '';
+  }
 
   function renderDiffInto(host, prev, cur, full, commentOpts) {
     const r = D.compare(prev, cur, { full: full, sort: true, context: 3, commentOpts: commentOpts });
@@ -346,11 +339,34 @@
       return;
     }
 
-    /* toggle a line comment panel open/closed */
+    /* open a line's comment panel, quoting whatever is highlighted on it */
     const lnBtn = t.closest('.ln-cm-btn');
     if (lnBtn) {
-      const panel = lnBtn.closest('.row').nextElementSibling;
-      if (panel && panel.classList.contains('ln-cm-panel')) panel.hidden = !panel.hidden;
+      const row = lnBtn.closest('.row');
+      const snippet = selectionWithin(row);
+      let panel = row.nextElementSibling;
+      if (!panel || !panel.classList.contains('ln-cm-panel')) {
+        // No comments on this line yet, so no panel was rendered — make one.
+        row.insertAdjacentHTML('afterend',
+          D.commentPanel(lnBtn.dataset.diffId, lnBtn.dataset.lineKey, [], canComment()));
+        panel = row.nextElementSibling;
+      }
+      panel.hidden = !panel.hidden;
+      const quote = panel.querySelector('.ln-cm-quote');
+      if (quote) {
+        // Fall back to the whole line when nothing narrower is highlighted.
+        const cellTexts = [].slice.call(row.querySelectorAll('.cell .tx')).map(x => x.textContent.trim());
+        const lineText = cellTexts.length > 1 && cellTexts[0] !== cellTexts[1]
+          ? cellTexts[0] + '  →  ' + cellTexts[1]
+          : (cellTexts[0] || cellTexts[1] || '');
+        panel.dataset.snippet = snippet || lineText;
+        quote.textContent = panel.dataset.snippet;
+        quote.hidden = !panel.dataset.snippet;
+      }
+      if (!panel.hidden) {
+        const body = panel.querySelector('.cm-body');
+        if (body) body.focus();
+      }
       return;
     }
 
@@ -364,10 +380,7 @@
       const url = page ? page.dataset.url : '';
       const diffId = panel.dataset.diffId, lineKey = panel.dataset.lineKey;
       const row = panel.previousElementSibling;
-      const cellTexts = row ? [].slice.call(row.querySelectorAll('.cell .tx')).map(x => x.textContent.trim()) : [];
-      const context = cellTexts.length > 1 && cellTexts[0] !== cellTexts[1]
-        ? cellTexts[0] + '  →  ' + cellTexts[1]
-        : (cellTexts[0] || cellTexts[1] || '');
+      const context = panel.dataset.snippet || '';
       msg.textContent = 'Posting…';
       t.disabled = true;
       window.SchemaApp.onPostComment({ url: url, diffId: diffId, lineKey: lineKey, context: context, name: name, text: text }, function (err, entry) {
@@ -378,75 +391,17 @@
         if (empty) empty.remove();
         list.insertAdjacentHTML('beforeend',
           '<li><div class="cm-meta"><b>' + esc(entry.name) + '</b> · ' + esc(String(entry.ts || '').slice(0, 10)) + '</div>' +
+          (context ? '<blockquote class="sel-quote">' + esc(context) + '</blockquote>' : '') +
           '<p class="cm-text">' + esc(entry.text) + '</p></li>');
         const cmBtn = row && row.querySelector('.ln-cm-btn');
         if (cmBtn) {
           const n = list.querySelectorAll('li').length;
+          cmBtn.classList.add('has-cm');
           const countEl = cmBtn.querySelector('.ln-cm-count');
           if (countEl) countEl.textContent = n;
           else cmBtn.insertAdjacentHTML('beforeend', '<span class="ln-cm-count">' + n + '</span>');
         }
         nameEl.value = ''; bodyEl.value = ''; msg.textContent = 'Posted.';
-      });
-      return;
-    }
-
-    /* open the selection-comment composer, using whatever text is currently selected */
-    if (t.classList.contains('sel-cm-trigger')) {
-      const wrap = t.closest('.sel-cm');
-      // The code this comments on is whatever was rendered right before it:
-      // a <pre> of full code, or the diff view's host element.
-      const codeEl = wrap.previousElementSibling;
-      const box = wrap.querySelector('.sel-cm-box');
-      const sel = window.getSelection();
-      const text = sel && sel.rangeCount ? sel.toString().trim() : '';
-      const container = sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
-      const inScope = !!(codeEl && container && codeEl.contains(container));
-      box.hidden = false;
-      const msg = box.querySelector('.sel-cm-msg');
-      const quote = box.querySelector('.sel-cm-quote');
-      if (!text || !inScope) {
-        msg.hidden = false;
-        quote.hidden = true;
-        box.dataset.snippet = '';
-      } else {
-        msg.hidden = true;
-        quote.hidden = false;
-        quote.textContent = text;
-        box.dataset.snippet = text;
-        box.querySelector('.cm-body').focus();
-      }
-      return;
-    }
-
-    /* post a selection comment */
-    if (t.classList.contains('sel-cm-post')) {
-      const box = t.closest('.sel-cm-box');
-      const wrap = t.closest('.sel-cm');
-      const nameEl = box.querySelector('.cm-name'), bodyEl = box.querySelector('.cm-body'), msg = box.querySelector('.sel-cm-postmsg');
-      const name = nameEl.value.trim(), text = bodyEl.value.trim();
-      if (!name || !text) { msg.textContent = 'Enter your name and a comment.'; return; }
-      if (!box.dataset.snippet) { msg.textContent = 'Select some text in the code above first.'; return; }
-      const page = t.closest('.page');
-      const url = page ? page.dataset.url : '';
-      const diffId = wrap.dataset.selScope;
-      msg.textContent = 'Posting…';
-      t.disabled = true;
-      window.SchemaApp.onPostComment({ url: url, diffId: diffId, lineKey: SEL_KEY, context: box.dataset.snippet, name: name, text: text }, function (err, entry) {
-        t.disabled = false;
-        if (err) { msg.textContent = 'Could not post: ' + err.message; return; }
-        let list = wrap.querySelector('.sel-cm-list');
-        if (!list) {
-          list = document.createElement('ul');
-          list.className = 'cm-list sel-cm-list';
-          wrap.appendChild(list);
-        }
-        list.insertAdjacentHTML('beforeend',
-          '<li><div class="cm-meta"><b>' + esc(entry.name) + '</b> · ' + esc(String(entry.ts || '').slice(0, 10)) + '</div>' +
-          (box.dataset.snippet ? '<blockquote class="sel-quote">' + esc(box.dataset.snippet) + '</blockquote>' : '') +
-          '<p class="cm-text">' + esc(entry.text) + '</p></li>');
-        nameEl.value = ''; bodyEl.value = ''; msg.textContent = 'Posted.';
-        box.hidden = true;
       });
       return;
     }
@@ -468,7 +423,7 @@
       let h = chgList(summaryFor(page, i));
       if (v.note) h += '<p class="flat" style="margin-top:9px">' + esc(v.note) + '</p>';
       h += '<details class="fold"><summary>View schema for ' + esc(v.version) + '</summary>' +
-        '<div class="inner">' + selectionCodeBlock(page, 'Schema: ' + v.version, v.schema) + '</div></details>';
+        '<div class="inner"><pre class="code">' + esc(D.pretty(v.schema, false)) + '</pre></div></details>';
       if (prev) {
         const r = D.compare(prev.schema, v.schema, { full: false, sort: true, context: 3 });
         h += '<details class="fold"><summary>Compare with ' + esc(prev.version) + '</summary>' +

@@ -105,7 +105,13 @@ ul.chg li.nil::before{content:"·";color:var(--muted)}
 /* ---------- line comments (comment column beside a diff) ---------- */
 .gut span.gcm{flex:0 0 40px;padding:0}
 .cmcell{flex:0 0 40px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--rule);background:#fafbfc}
-.ln-cm-btn{border:0;background:none;cursor:pointer;font-size:13px;padding:4px;border-radius:4px;color:var(--muted);position:relative;font-family:var(--sans)}
+.ln-cm-btn{border:0;background:none;cursor:pointer;font-size:13px;padding:4px;border-radius:4px;color:var(--muted);position:relative;font-family:var(--sans);
+  visibility:hidden}
+/* The icon stays out of the way until the line is highlighted or hovered,
+   or already carries comments. */
+.row.sel-hit .ln-cm-btn,.row:hover .ln-cm-btn,.ln-cm-btn.has-cm{visibility:visible}
+.row.sel-hit{background:#eef4fd}
+.row.sel-hit .cmcell{background:#e3ecfb}
 .ln-cm-btn:hover{background:#eef2f6}
 .ln-cm-count{display:inline-block;margin-left:2px;font-size:10.5px;font-weight:600;color:var(--focus)}
 .ln-cm-panel{font-family:var(--sans);font-size:13px;background:var(--paper);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 14px}
@@ -118,12 +124,9 @@ ul.cm-list li.cm-empty{color:var(--muted);font-size:13px}
 .cm-form input,.cm-form textarea{margin-bottom:8px;font-family:var(--sans)}
 .cm-form textarea{resize:vertical}
 
-/* ---------- select-and-comment on full-code blocks ---------- */
-pre.code[data-sel-scope]{user-select:text}
-.sel-cm{font-family:var(--sans);margin-top:9px}
-.sel-cm-box{margin-top:9px;border:1px solid var(--rule);border-radius:5px;padding:11px 13px;background:#fafbfc}
+/* the highlighted text a comment refers to, quoted in the comment panel */
 .sel-quote{margin:0 0 9px;padding:6px 10px;border-left:3px solid var(--focus);background:#eef2f6;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word}
-.sel-cm-list .sel-quote{border-left-color:var(--rule);background:#f7f8f9}
+ul.cm-list .sel-quote{border-left-color:var(--rule);background:#f7f8f9}
 
 pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.6;background:#fafbfc;border:1px solid var(--rule);border-radius:4px;padding:12px 14px;margin:0;max-height:460px;overflow:auto;white-space:pre}
 

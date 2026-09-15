@@ -192,36 +192,47 @@ window.SchemaDiff = (function () {
     '<span class="cell ' + cls + '"><span class="no">' + (num || '') + '</span>' +
     '<span class="tx">' + (txt === null ? '' : esc(txt)) + '</span></span>';
 
-  // Stable-ish per-row key for anchoring a comment to a changed line: the
-  // JSON property name if the line looks like `"name": ...`, else a hash of
-  // its text. A running count disambiguates repeated property names within
-  // one diff (e.g. "audienceType" appearing on several nodes).
+  // Stable per-row key for anchoring a comment to a line: the JSON property
+  // name if the line looks like `"name": ...`, else a hash of its text. A
+  // running count disambiguates repeats (e.g. "audienceType" on several
+  // nodes). Keys are assigned over the whole diff, not just the rows being
+  // displayed, so the same line keeps the same key in both "changes only"
+  // and "show full code" modes.
   function hashStr(s) {
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     return 'h' + (h >>> 0).toString(36);
   }
-  function lineKeyFor(seen, s) {
-    const t = String(s || '').trim();
-    const m = t.match(/^"([^"]+)":/);
-    const base = m ? m[1] : hashStr(t);
-    const n = (seen[base] = (seen[base] || 0) + 1);
-    return n > 1 ? base + '#' + n : base;
+
+  function lineKeys(d) {
+    const seen = {}, map = new Map();
+    d.forEach(x => {
+      const t = String(x.s || '').trim();
+      const m = t.match(/^"([^"]+)":/);
+      const base = m ? m[1] : hashStr(t);
+      const n = (seen[base] = (seen[base] || 0) + 1);
+      map.set(x, n > 1 ? base + '#' + n : base);
+    });
+    return map;
   }
 
   function commentButton(diffId, key, count) {
-    return '<button type="button" class="ln-cm-btn" data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '" aria-label="Comment on this change">💬' +
+    return '<button type="button" class="ln-cm-btn' + (count ? ' has-cm' : '') + '"' +
+      ' data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '"' +
+      ' aria-label="Comment on this line">💬' +
       (count ? '<span class="ln-cm-count">' + count + '</span>' : '') + '</button>';
   }
 
   function commentPanel(diffId, key, comments, canPost) {
     const items = (comments || []).map(c =>
       '<li><div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) + '</div>' +
+      (c.context ? '<blockquote class="sel-quote">' + esc(c.context) + '</blockquote>' : '') +
       '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
     return '<div class="ln-cm-panel" data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '" hidden>' +
       '<ul class="cm-list">' + (items || '<li class="cm-empty">No comments yet.</li>') + '</ul>' +
       (canPost
-        ? '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
+        ? '<blockquote class="sel-quote ln-cm-quote" hidden></blockquote>' +
+          '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
           '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
           '<div class="foldbar"><button class="mini ln-cm-post" type="button">Post comment</button>' +
           '<span class="count ln-cm-msg"></span></div></div>'
@@ -237,7 +248,24 @@ window.SchemaDiff = (function () {
     const ctx = context == null ? 3 : context;
     const lab = labels || {};
     const co = commentOpts || null;
-    const seenKeys = {};
+    const keys = co ? lineKeys(d) : null;
+
+    // A row's comment cell: the icon (shown on hover/selection, or always if
+    // it already has comments) plus, only where comments exist, the panel.
+    // Panels for everything else are created on demand when the icon is used.
+    const cmCell = entry => {
+      if (!co) return '';
+      const key = keys.get(entry);
+      const list = co.comments[key];
+      return '<span class="cmcell">' + commentButton(co.diffId, key, list && list.length) + '</span>';
+    };
+    const cmPanel = entry => {
+      if (!co) return '';
+      const key = keys.get(entry);
+      const list = co.comments[key];
+      return list && list.length ? commentPanel(co.diffId, key, list, co.canPost) : '';
+    };
+
     let h = '<div class="diff"><div class="gut"><span>' + esc(lab.left || 'Previous') +
       '</span><span>' + esc(lab.right || 'Current') + '</span>' +
       (co ? '<span class="gcm"></span>' : '') + '</div>';
@@ -262,17 +290,11 @@ window.SchemaDiff = (function () {
       const n = Math.max(dels.length, adds.length);
       for (let k = 0; k < n; k++) {
         const L = dels[k], R = adds[k];
+        const anchor = R || L;
         h += '<div class="row">' +
           (L ? cell(L.s, L.o, 'd') : cell(null, '', 'void')) +
-          (R ? cell(R.s, R.w, 'a') : cell(null, '', 'void'));
-        if (co) {
-          const key = lineKeyFor(seenKeys, (R && R.s) || (L && L.s) || '');
-          const list = co.comments[key];
-          h += '<span class="cmcell">' + commentButton(co.diffId, key, list && list.length) + '</span>';
-          h += '</div>' + commentPanel(co.diffId, key, list, co.canPost);
-        } else {
-          h += '</div>';
-        }
+          (R ? cell(R.s, R.w, 'a') : cell(null, '', 'void')) +
+          cmCell(anchor) + '</div>' + cmPanel(anchor);
       }
       dels = []; adds = [];
     };
@@ -286,7 +308,8 @@ window.SchemaDiff = (function () {
       if (it.t === '-') { dels.push(it); return; }
       if (it.t === '+') { adds.push(it); return; }
       flush();
-      h += '<div class="row">' + cell(it.s, it.o, '') + cell(it.s, it.w, '') + (co ? '<span class="cmcell"></span>' : '') + '</div>';
+      h += '<div class="row">' + cell(it.s, it.o, '') + cell(it.s, it.w, '') +
+        cmCell(it) + '</div>' + cmPanel(it);
     });
     flush();
     return h + '</div>';
@@ -319,6 +342,6 @@ window.SchemaDiff = (function () {
   return {
     extract: extract, sortKeys: sortKeys, parse: parse, pretty: pretty,
     toLines: toLines, lines: lines, summarise: summarise,
-    splitView: splitView, compare: compare, esc: esc
+    splitView: splitView, compare: compare, esc: esc, commentPanel: commentPanel
   };
 })();
