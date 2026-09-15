@@ -81,6 +81,7 @@
       '<div class="inner">' +
       '<p class="hint">What is currently live on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).</p>' +
       (r.error ? '<div class="err">' + esc(r.error) + '</div>' : (inSync ? '<div class="flat">No difference found.</div>' : r.html)) +
+      selectionCommentUI(page, DIFF_FAQ) +
       '</div></details></div>';
   }
 
@@ -117,7 +118,8 @@
         '<div class="foldbar"><span class="count">' + esc(vs[1].version) + ' → ' + esc(cur.version) + '</span>' +
         '<span class="spacer"></span>' +
         '<button class="mini toggle-full" type="button" data-full="0">Show full code</button></div>' +
-        '<div class="diffhost"></div></div></details>';
+        '<div class="diffhost"></div>' + selectionCommentUI(page, DIFF_CODE) +
+        '</div></details>';
     } else {
       h += '<div class="flat">Only one version recorded, so there is nothing to compare yet.</div>';
     }
@@ -254,10 +256,11 @@
 
   const SEL_KEY = 'note'; // one flat comment thread per code block; each entry quotes its own selection
 
-  // A full-code <pre> the viewer can select text in and comment on that
-  // exact selection. Comments reuse the Line Comments sheet/hook — the
-  // selected text is stored in the same "context" field used elsewhere.
-  function selectionCodeBlock(page, diffId, schema) {
+  // Comment UI for whatever code block is rendered immediately before it —
+  // a full-code <pre>, a diff split view, anything. The viewer selects text
+  // in that block and comments on that exact selection; the selected text is
+  // stored in the same "context" field the Line Comments sheet already has.
+  function selectionCommentUI(page, diffId) {
     const items = (commentsFor(page, diffId)[SEL_KEY]) || [];
     const canPost = canComment();
     const list = items.map(c =>
@@ -265,11 +268,10 @@
       (c.context ? '<blockquote class="sel-quote">' + esc(c.context) + '</blockquote>' : '') +
       '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
 
-    return '<pre class="code" data-sel-scope="' + esc(diffId) + '">' + esc(D.pretty(schema, false)) + '</pre>' +
-      '<div class="sel-cm" data-sel-scope="' + esc(diffId) + '">' +
+    return '<div class="sel-cm" data-sel-scope="' + esc(diffId) + '">' +
       (canPost ? '<button type="button" class="mini sel-cm-trigger">Comment on selected text</button>' : '') +
       '<div class="sel-cm-box" hidden>' +
-      '<p class="hint sel-cm-msg">Select some text in the code above, then click "Comment on selected text" again.</p>' +
+      '<p class="hint sel-cm-msg">Select some text above, then click “Comment on selected text” again.</p>' +
       '<blockquote class="sel-quote sel-cm-quote"></blockquote>' +
       '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
       '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
@@ -279,6 +281,10 @@
       (items.length ? '<ul class="cm-list sel-cm-list">' + list + '</ul>' : '') +
       '</div>';
   }
+
+  const selectionCodeBlock = (page, diffId, schema) =>
+    '<pre class="code" data-sel-scope="' + esc(diffId) + '">' + esc(D.pretty(schema, false)) + '</pre>' +
+    selectionCommentUI(page, diffId);
 
   function renderDiffInto(host, prev, cur, full, commentOpts) {
     const r = D.compare(prev, cur, { full: full, sort: true, context: 3, commentOpts: commentOpts });
@@ -388,14 +394,14 @@
     /* open the selection-comment composer, using whatever text is currently selected */
     if (t.classList.contains('sel-cm-trigger')) {
       const wrap = t.closest('.sel-cm');
-      const scope = wrap.dataset.selScope;
-      const codeEl = wrap.previousElementSibling; // the matching pre.code, rendered just before this block
+      // The code this comments on is whatever was rendered right before it:
+      // a <pre> of full code, or the diff view's host element.
+      const codeEl = wrap.previousElementSibling;
       const box = wrap.querySelector('.sel-cm-box');
       const sel = window.getSelection();
       const text = sel && sel.rangeCount ? sel.toString().trim() : '';
       const container = sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
-      const inScope = container && (container.nodeType === 3 ? container.parentElement : container).closest &&
-        (container.nodeType === 3 ? container.parentElement : container).closest('pre.code[data-sel-scope="' + scope.replace(/"/g, '\\"') + '"]') === codeEl;
+      const inScope = !!(codeEl && container && codeEl.contains(container));
       box.hidden = false;
       const msg = box.querySelector('.sel-cm-msg');
       const quote = box.querySelector('.sel-cm-quote');
