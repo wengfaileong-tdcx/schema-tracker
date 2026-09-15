@@ -208,8 +208,9 @@
 
   /* ---------- latest changes feed ---------- */
 
-  const RECENT_FEED_MAX = 8;
-
+  // Every page whose newest version lands on the most recent date tracked —
+  // i.e. everything that changed in the latest batch, however many that is.
+  // Pages last touched in an earlier batch stay in the list below instead.
   function recentFeed() {
     const rows = DATA.pages
       .filter(p => (p.versions || []).length)
@@ -219,18 +220,21 @@
 
     if (!rows.length) return '';
 
-    const items = rows.slice(0, RECENT_FEED_MAX).map(r => {
-      const recent = daysAgo(r.cur.date) <= RECENT_DAYS;
-      return '<li class="rf-item' + (recent ? ' rf-new' : '') + '" data-url="' + esc(r.page.url) + '">' +
-        '<button type="button" class="rf-open">' +
-        '<span class="rf-title">' + esc(r.page.title || r.page.url) + '</span>' +
-        '<span class="rf-url">' + esc(r.page.url) + '</span>' +
-        '<span class="rf-date">' + esc(fmt(r.cur.date)) + '</span>' +
-        '</button></li>';
-    }).join('');
+    const newest = rows[0].cur.date;
+    const latest = rows.filter(r => r.cur.date === newest);
+    const recent = daysAgo(newest) <= RECENT_DAYS;
 
-    return '<h2 class="rf-h">Latest schema changes</h2>' +
-      '<ul class="rf-list">' + items + '</ul>';
+    const items = latest.map(r =>
+      '<li class="rf-item' + (recent ? ' rf-new' : '') + '" data-url="' + esc(r.page.url) + '">' +
+      '<button type="button" class="rf-open">' +
+      '<span class="rf-title">' + esc(r.page.title || r.page.url) + '</span>' +
+      '<span class="rf-url">' + esc(r.page.url) + '</span>' +
+      '<span class="rf-date">' + esc(fmt(r.cur.date)) + '</span>' +
+      '</button></li>').join('');
+
+    return '<h2 class="rf-h">Latest schema changes<span class="rf-sub"> · ' +
+      esc(fmt(newest)) + ' · ' + latest.length + ' page' + (latest.length === 1 ? '' : 's') +
+      '</span></h2><ul class="rf-list">' + items + '</ul>';
   }
 
   function drawRecent() {
