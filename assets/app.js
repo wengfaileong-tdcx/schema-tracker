@@ -101,8 +101,9 @@
         '</select></div>'
       : '';
 
-    return '<div class="block"><details class="fold faq-sync" data-url="' + esc(page.url) + '"' +
-      (first.status === 'in sync' ? '' : ' open') + '>' +
+    // Starts collapsed like every other section — the status in the summary
+    // already says whether it needs a look.
+    return '<div class="block"><details class="fold faq-sync" data-url="' + esc(page.url) + '">' +
       '<summary>FAQ sync check with live site<span class="count"> · <span class="faq-status">' +
       first.status + '</span></span></summary>' +
       '<div class="inner">' +
