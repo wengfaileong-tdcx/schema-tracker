@@ -11,6 +11,7 @@
   // so the raw sheet row is readable without opening the dashboard.
   const DIFF_CODE = 'View code changes';
   const DIFF_FAQ = 'FAQ sync check';
+  const DIFF_FAQ_STAGING = 'FAQ sync check (staging)';
 
   /* ---------- helpers ---------- */
 
@@ -66,21 +67,47 @@
     a: (q.acceptedAnswer && q.acceptedAnswer.text) || ''
   }));
 
-  function faqSyncBlock(page, cur) {
-    const faqPage = findFaqPage(cur.schema);
-    if (!faqPage || !page.liveFaq) return '';
-    const tracked = trackedFaqPairs(faqPage);
-    const r = D.compare(page.liveFaq, tracked, {
-      full: false, sort: true, context: 3, labels: { left: 'Live Site', right: 'Proposed' },
-      commentOpts: { diffId: DIFF_FAQ, comments: commentsFor(page, DIFF_FAQ), canPost: canComment() }
+  // Which published versions of a page we can compare the proposed schema
+  // against. Staging only appears when the sheet has data for it.
+  const faqSources = page => [
+    { id: 'live', label: 'Live site', pairs: page.liveFaq, diffId: DIFF_FAQ },
+    { id: 'staging', label: 'Staging site', pairs: page.stagingFaq, diffId: DIFF_FAQ_STAGING }
+  ].filter(s => s.pairs && s.pairs.length);
+
+  // Compares one source against the tracked FAQPage schema.
+  function faqCompare(page, faqPage, source) {
+    const r = D.compare(source.pairs, trackedFaqPairs(faqPage), {
+      full: false, sort: true, context: 3, labels: { left: source.label, right: 'Proposed' },
+      commentOpts: { diffId: source.diffId, comments: commentsFor(page, source.diffId), canPost: canComment() }
     });
     const inSync = !r.error && !r.add && !r.del;
-    return '<div class="block"><details class="fold"' + (inSync ? '' : ' open') + '>' +
-      '<summary>FAQ sync check with live site<span class="count"> · ' +
-      (r.error ? 'error' : inSync ? 'in sync' : 'out of sync') + '</span></summary>' +
+    return {
+      status: r.error ? 'error' : inSync ? 'in sync' : 'out of sync',
+      html: r.error ? '<div class="err">' + esc(r.error) + '</div>'
+        : inSync ? '<div class="flat">No difference found.</div>' : r.html
+    };
+  }
+
+  function faqSyncBlock(page, cur) {
+    const faqPage = findFaqPage(cur.schema);
+    const sources = faqPage ? faqSources(page) : [];
+    if (!sources.length) return '';
+    const first = faqCompare(page, faqPage, sources[0]);
+
+    const picker = sources.length > 1
+      ? '<div class="foldbar"><span class="count">Compare against</span>' +
+        '<select class="faq-src" style="width:auto">' +
+        sources.map(s => '<option value="' + esc(s.id) + '">' + esc(s.label) + '</option>').join('') +
+        '</select></div>'
+      : '';
+
+    return '<div class="block"><details class="fold faq-sync" data-url="' + esc(page.url) + '"' +
+      (first.status === 'in sync' ? '' : ' open') + '>' +
+      '<summary>FAQ sync check with live site<span class="count"> · <span class="faq-status">' +
+      first.status + '</span></span></summary>' +
       '<div class="inner">' +
-      '<p class="hint">What is currently live on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).</p>' +
-      (r.error ? '<div class="err">' + esc(r.error) + '</div>' : (inSync ? '<div class="flat">No difference found.</div>' : r.html)) +
+      '<p class="hint">What is published on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).</p>' +
+      picker + '<div class="faqhost">' + first.html + '</div>' +
       '</div></details></div>';
   }
 
@@ -449,6 +476,19 @@
         esc(vs[older].version) + ' → ' + esc(vs[newer].version) + '</p>' +
         (r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html);
     }
+  });
+
+  /* switch the FAQ sync check between the live and staging page */
+  document.addEventListener('change', function (e) {
+    if (!e.target.classList.contains('faq-src')) return;
+    const fold = e.target.closest('.faq-sync');
+    const page = pageByUrl(fold.dataset.url);
+    const faqPage = findFaqPage(ordered(page)[0].schema);
+    const source = faqSources(page).filter(s => s.id === e.target.value)[0];
+    if (!faqPage || !source) return;
+    const out = faqCompare(page, faqPage, source);
+    fold.querySelector('.faqhost').innerHTML = out.html;
+    fold.querySelector('.faq-status').textContent = out.status;
   });
 
   /* ---------- boot ---------- */

@@ -100,23 +100,39 @@
     ? fetchValues(token, cfg.faqTab).catch(() => ({ values: [] }))
     : Promise.resolve({ values: [] });
 
-  // "FAQ Live" tab layout: URL | Live FAQ (a JSON array of {q,a} written
-  // by the LIVE_FAQ() Apps Script function — see sheet-scripts/faq-live.gs).
+  // "FAQ Live" tab layout: URL | Live FAQ | Staging FAQ (optional), each FAQ
+  // cell a JSON array of {q,a} written by the LIVE_FAQ() Apps Script function
+  // — see sheet-scripts/faq-live.gs. Staging lets the dashboard compare the
+  // proposed schema against a pre-release page as well as the live one.
   function attachFaqLive(data, rows) {
     if (!rows.length) return data;
     const head = rows[0].map(x => String(x || '').trim().toLowerCase());
     const uIdx = head.indexOf('url');
-    const fIdx = head.findIndex(h => h.indexOf('faq') > -1);
-    if (uIdx < 0 || fIdx < 0) return data;
+    const sIdx = head.findIndex(h => h.indexOf('staging') > -1);
+    const fIdx = head.findIndex((h, i) => i !== sIdx && (h.indexOf('faq') > -1 || h.indexOf('live') > -1));
+    if (uIdx < 0 || (fIdx < 0 && sIdx < 0)) return data;
+
+    const parseCell = v => {
+      const raw = (v || '').trim();
+      if (!raw || raw.indexOf('ERROR') === 0) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; } // malformed cell
+    };
 
     const byUrl = {};
     rows.slice(1).forEach(r => {
       const url = (r[uIdx] || '').trim();
-      const raw = (r[fIdx] || '').trim();
-      if (!url || !raw || raw.indexOf('ERROR') === 0) return;
-      try { byUrl[url] = JSON.parse(raw); } catch (e) { /* leave unset — malformed cell */ }
+      if (!url) return;
+      byUrl[url] = {
+        live: fIdx > -1 ? parseCell(r[fIdx]) : null,
+        staging: sIdx > -1 ? parseCell(r[sIdx]) : null
+      };
     });
-    data.pages.forEach(p => { if (byUrl[p.url]) p.liveFaq = byUrl[p.url]; });
+    data.pages.forEach(p => {
+      const found = byUrl[p.url];
+      if (!found) return;
+      if (found.live) p.liveFaq = found.live;
+      if (found.staging) p.stagingFaq = found.staging;
+    });
     return data;
   }
 

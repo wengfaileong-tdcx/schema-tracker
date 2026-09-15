@@ -17,12 +17,16 @@
         and allow it — this runs only inside your own sheet, using
         your own Google account, not shared with anyone else.
 
-   This matches the specific HTML structure of the FAQ accordion at
-   the time this was written (a Radix UI / Tailwind CSS accordion —
-   question in a <span class="flex-1 text-lg font-medium ...">,
-   answer in a following <p class="flex flex-col gap-4 text-lg ...">).
-   If the live site is later redesigned, the class names below will
-   need updating to match the new markup.
+   Works on any environment that shares the site's FAQ accordion
+   markup, so the same function serves both the live and the staging
+   URL — just point separate columns at each.
+
+   It matches a Radix UI / Tailwind accordion: the question sits in a
+   <span class="flex-1 text-lg font-medium ...">, and the answer is the
+   first <p> inside the accordion's role="region" panel. The answer is
+   anchored on role="region" rather than the paragraph's own classes
+   because those differ between live and staging. If the site is
+   redesigned, the two patterns below need updating to match.
    ============================================================ */
 
 function LIVE_FAQ(url) {
@@ -35,7 +39,7 @@ function LIVE_FAQ(url) {
   }
 
   var questions = matchAll_(html, /<span class="flex-1 text-lg font-medium[^"]*">([\s\S]*?)<\/span>/g);
-  var answers = matchAll_(html, /<p class="flex flex-col gap-4 text-lg[^"]*">([\s\S]*?)<\/p>/g);
+  var answers = matchAll_(html, /role="region"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/g);
 
   var n = Math.min(questions.length, answers.length);
   var pairs = [];
