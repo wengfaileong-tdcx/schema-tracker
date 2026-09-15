@@ -111,9 +111,54 @@
       '</div></details></div>';
   }
 
+  /* ---------- shared bits of page metadata ---------- */
+
+  // How many individual changes the newest version introduced. "Initial
+  // version" and "No change" are statements about the diff, not a list of
+  // edits, so they count as none.
+  function changeCount(page) {
+    const items = summaryFor(page, 0);
+    if (items.length === 1 && /^(Initial version|No change)$/.test(items[0])) return 0;
+    return items.length;
+  }
+
+  // The schema.org types a page declares, e.g. WebPage, FAQPage. Page-level
+  // types come first: they say what the page *is*, which is more use at a
+  // glance than the Offer or Brand nodes hanging off it.
+  function schemaTypes(schema) {
+    const out = [];
+    const visit = v => {
+      if (!v || typeof v !== 'object') return;
+      if (Array.isArray(v)) { v.forEach(visit); return; }
+      [].concat(v['@type'] || []).forEach(t => { if (t && out.indexOf(t) < 0) out.push(t); });
+      if (v['@graph']) visit(v['@graph']);
+    };
+    visit(schema);
+    const isPage = t => /Page$/.test(t);
+    return out.filter(isPage).concat(out.filter(t => !isPage(t)));
+  }
+
+  const pathOf = u => {
+    const m = String(u || '').match(/^https?:\/\/[^/]+(\/.*)?$/);
+    return m ? (m[1] || '/') : (u || '');
+  };
+
+  const changesPill = n =>
+    '<span class="pill pill-chg">' + n + ' change' + (n === 1 ? '' : 's') + '</span>';
+
+  const typePills = (schema, max) =>
+    schemaTypes(schema).slice(0, max || 2)
+      .map(t => '<span class="pill pill-type">' + esc(t) + '</span>').join('');
+
+  const extLink = url => /^https?:\/\//.test(url)
+    ? '<a class="ext" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' +
+      ' aria-label="Open page in a new tab" title="Open page in a new tab">' +
+      '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h8v8h-2V5.4L6.7 10.7 5.3 9.3 10.6 4H6V2z"/><path d="M2 4h3v2H4v6h6V9h2v5H2V4z"/></svg></a>'
+    : '';
+
   /* ---------- render one page row ---------- */
 
-  function pageRow(page) {
+  function pageRow(page, index) {
     const vs = ordered(page);
     if (!vs.length) return '';
     const cur = vs[0];
@@ -123,15 +168,19 @@
 
     let h = '<details class="page" data-url="' + esc(page.url) + '">';
     h += '<summary>';
-    h += '<div class="u">' + esc(page.url) + '</div>';
+    h += '<span class="p-num">' + (index + 1) + '</span>';
+    h += '<div class="p-main">';
+    h += '<div class="u">' + esc(page.url) + extLink(page.url) + '</div>';
     h += '<div class="line2">';
     h += '<span>Current version <b>' + esc(cur.version) + '</b></span>';
     h += '<span>Last updated <b>' + esc(fmt(cur.date)) + '</b></span>';
     if (page.status) h += '<span class="badge ' + (st === 'live' ? 'live' : st === 'draft' ? 'draft' : '') + '">' + esc(page.status) + '</span>';
     if (recent) h += '<span class="badge new">Updated recently</span>';
     h += '</div>';
-    h += '<div class="latest">' + esc(items.slice(0, 2).join(' · ')) +
-      (items.length > 2 ? ' · +' + (items.length - 2) + ' more' : '') + '</div>';
+    h += '<div class="latest">' + esc(items.slice(0, 2).join(', ')) +
+      (items.length > 2 ? ' + ' + (items.length - 2) + ' more changes…' : '') + '</div>';
+    h += '</div>';
+    h += '<span class="p-right">' + changesPill(changeCount(page)) + '<span class="chev"></span></span>';
     h += '</summary>';
 
     h += '<div class="body">';
@@ -210,44 +259,84 @@
 
   const FEED_PREVIEW = 8;
 
-  // An index for jumping to the reviews below, not a dashboard in its own
-  // right: every page whose newest version lands on the most recent tracked
-  // date, listed compactly, with only the first few shown until asked.
-  function recentFeed() {
+  // The pages that changed in the most recent batch, newest first.
+  function latestBatch() {
     const rows = DATA.pages
       .filter(p => (p.versions || []).length)
       .map(p => ({ page: p, cur: ordered(p)[0] }))
       .filter(r => r.cur.date)
       .sort((a, b) => b.cur.date.localeCompare(a.cur.date));
-
-    if (!rows.length) return '';
-
+    if (!rows.length) return { date: '', rows: [] };
     const newest = rows[0].cur.date;
-    const latest = rows.filter(r => r.cur.date === newest);
-    const total = latest.length;
+    return { date: newest, rows: rows.filter(r => r.cur.date === newest) };
+  }
+
+  const ICON = {
+    doc: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2h6l4 4v12H5V2zm6 1.5V7h3.5L11 3.5z"/></svg>',
+    code: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.4 5.6 3 10l4.4 4.4 1.4-1.4L5.8 10l3-3-1.4-1.4zm5.2 0L11.2 7l3 3-3 3 1.4 1.4L17 10l-4.4-4.4z"/></svg>',
+    cal: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2v2H4v14h12V4h-2V2h-2v2H8V2H6zm10 6v8H4V8h12z"/></svg>'
+  };
+
+  function heroBand() {
+    const batch = latestBatch();
+    if (!batch.rows.length) return '';
+    const urls = batch.rows.length;
+    const changes = batch.rows.reduce((n, r) => n + changeCount(r.page), 0);
+    const tile = (icon, value, label) =>
+      '<div class="tile"><span class="tile-i">' + icon + '</span>' +
+      '<span class="tile-v">' + esc(value) + '</span>' +
+      '<span class="tile-l">' + esc(label) + '</span></div>';
+
+    return '<section class="hero">' +
+      '<div class="hero-main"><span class="hero-i">' + ICON.doc + '</span>' +
+      '<div><h2 class="hero-h">Latest schema changes</h2>' +
+      '<p class="hero-sub">' + urls + ' URL' + (urls === 1 ? '' : 's') + ' updated on <b>' + esc(fmt(batch.date)) + '</b></p>' +
+      '<p class="hero-hint">Review the changes below. Click any URL to jump to its section.</p></div></div>' +
+      '<div class="hero-tiles">' +
+      tile(ICON.doc, String(urls), 'URLs changed') +
+      tile(ICON.code, String(changes), 'Schema changes') +
+      tile(ICON.cal, fmt(batch.date), 'Latest update') +
+      '</div></section>';
+  }
+
+  // A jump index into the reviews below: the first few changed URLs, with the
+  // rest a click away.
+  function recentFeed() {
+    const batch = latestBatch();
+    const total = batch.rows.length;
+    if (!total) return '';
     const shown = Math.min(FEED_PREVIEW, total);
 
-    const items = latest.map((r, i) => {
+    const items = batch.rows.map((r, i) => {
       const hidden = i >= FEED_PREVIEW;
       return '<li class="rf-item' + (hidden ? ' rf-extra' : '') + '"' + (hidden ? ' hidden' : '') +
         ' data-url="' + esc(r.page.url) + '">' +
         '<button type="button" class="rf-open">' +
-        '<span class="rf-u">' + esc(r.page.url) + '</span>' +
-        (r.page.title ? '<span class="rf-t">' + esc(r.page.title) + '</span>' : '') +
+        '<span class="rf-n">' + (i + 1) + '</span>' +
+        '<span class="rf-t">' + esc(r.page.title || pathOf(r.page.url)) + '</span>' +
+        '<span class="rf-u">' + esc(pathOf(r.page.url)) + '</span>' +
+        '<span class="rf-pills">' + changesPill(changeCount(r.page)) + typePills(r.cur.schema, 2) + '</span>' +
+        '<span class="rf-d">' + esc(fmt(r.cur.date)) + '</span>' +
+        '<span class="chev"></span>' +
         '</button></li>';
     }).join('');
 
-    return '<div class="rf">' +
-      '<h2 class="rf-h">Latest schema changes</h2>' +
-      '<p class="rf-head"><span class="rf-n">' + total + '</span>' +
-      '<span class="rf-lab">URL' + (total === 1 ? '' : 's') + ' changed on ' + esc(fmt(newest)) + '</span></p>' +
+    const rest = total - shown;
+    return '<section class="rf">' +
+      '<div class="rf-head"><h2 class="rf-h">Recent changed URLs</h2>' +
+      (total > FEED_PREVIEW
+        ? '<span class="rf-showing">Showing ' + shown + ' of ' + total + '</span>' +
+          '<button type="button" class="rf-toggle btn-ghost" data-total="' + total + '" data-preview="' + FEED_PREVIEW + '">' +
+          'View all ' + total + '<span class="chev chev-r"></span></button>'
+        : '<span class="rf-showing">' + total + ' URL' + (total === 1 ? '' : 's') + '</span>') +
+      '</div>' +
       '<ul class="rf-list">' + items + '</ul>' +
       (total > FEED_PREVIEW
-        ? '<p class="rf-foot"><span class="rf-showing">Showing ' + shown + ' of ' + total + '</span>' +
-          '<button type="button" class="rf-toggle" data-total="' + total + '" data-preview="' + FEED_PREVIEW + '">' +
-          'View all ' + total + '</button></p>'
+        ? '<div class="rf-foot"><button type="button" class="rf-toggle rf-more" data-total="' + total +
+          '" data-preview="' + FEED_PREVIEW + '">Show ' + rest + ' more URL' + (rest === 1 ? '' : 's') +
+          '<span class="chev"></span></button></div>'
         : '') +
-      '</div>';
+      '</section>';
   }
 
   function drawRecent() {
@@ -255,17 +344,22 @@
   }
 
   document.addEventListener('click', function (e) {
-    /* expand or collapse the rest of the index */
+    /* expand or collapse the rest of the index (two buttons, kept in sync) */
     const toggle = e.target.closest('.rf-toggle');
     if (toggle) {
       const wrap = toggle.closest('.rf');
-      const open = toggle.dataset.open === '1';
       const total = +toggle.dataset.total, preview = +toggle.dataset.preview;
+      const open = wrap.dataset.open === '1';
+      const rest = total - Math.min(preview, total);
       wrap.querySelectorAll('.rf-extra').forEach(li => { li.hidden = open; });
-      toggle.dataset.open = open ? '0' : '1';
-      toggle.textContent = open ? 'View all ' + total : 'Show fewer';
+      wrap.dataset.open = open ? '0' : '1';
       wrap.querySelector('.rf-showing').textContent =
         'Showing ' + (open ? Math.min(preview, total) : total) + ' of ' + total;
+      const top = wrap.querySelector('.btn-ghost');
+      if (top) top.innerHTML = (open ? 'View all ' + total : 'Show fewer') + '<span class="chev chev-r"></span>';
+      const more = wrap.querySelector('.rf-more');
+      if (more) more.innerHTML = (open ? 'Show ' + rest + ' more URL' + (rest === 1 ? '' : 's') : 'Show fewer') +
+        '<span class="chev"></span>';
       return;
     }
 
@@ -535,15 +629,13 @@
   });
 
   function drawBanner() {
-    if (SOURCE === 'sheet') {
-      $('banner').innerHTML = '<div class="src-banner src-live">' +
-        'Showing live data loaded from your Google Sheet.</div>';
-      return;
-    }
+    // When a sheet is connected the header's status card already says so, and
+    // a second banner just adds noise — only warn about sample data.
+    if (SOURCE === 'sheet') { $('banner').innerHTML = ''; return; }
     const hasSheet = window.SHEET_CONFIG && window.SHEET_CONFIG.enabled;
     $('banner').innerHTML = '<div class="src-banner src-sample">' +
       'Showing sample data, not real schema history.' +
-      (hasSheet ? ' Click <b>Connect Google Sheet</b> below to load the real thing.' : '') +
+      (hasSheet ? ' Use <b>Connect Google Sheet</b> above to load the real thing.' : '') +
       '</div>';
   }
 
@@ -552,14 +644,22 @@
     const allDates = DATA.pages.reduce((a, p) => a.concat((p.versions || []).map(v => v.date)), []).sort();
     $('stamp').textContent = allDates.length ? 'Most recent change ' + fmt(allDates[allDates.length - 1]) : '';
     drawBanner();
+    $('hero').innerHTML = heroBand();
     drawRecent();
     draw();
   }
 
   // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data
-  // without a page reload.
+  // without a page reload, and report its connection state into the header.
   window.SchemaApp = {
-    setData: function (data, source) { DATA = data || { pages: [] }; SOURCE = source || 'sample'; renderAll(); }
+    setData: function (data, source) { DATA = data || { pages: [] }; SOURCE = source || 'sample'; renderAll(); },
+    // state: 'idle' | 'busy' | 'ok' | 'error'
+    setConnection: function (info) {
+      const c = info || {};
+      $('conn').dataset.state = c.state || 'idle';
+      $('conn-title').textContent = c.title || 'Not connected';
+      $('conn-sub').textContent = c.sub || '';
+    }
   };
 
   renderAll();

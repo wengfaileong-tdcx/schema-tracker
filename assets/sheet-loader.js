@@ -10,15 +10,21 @@
   const D = window.SchemaDiff;
   const $ = id => document.getElementById(id);
 
-  const bar = document.createElement('div');
-  bar.className = 'sheet-bar noprint';
+  // The connection controls live in the header's status card.
+  const bar = document.getElementById('conn-controls');
   bar.innerHTML =
-    '<button id="sheet-connect" type="button">Connect Google Sheet</button>' +
     '<select id="sheet-tab" style="width:auto" hidden></select>' +
-    '<span class="count" id="sheet-status"></span>';
-  document.getElementById('recent').insertAdjacentElement('beforebegin', bar);
+    '<button id="sheet-connect" class="btn-ghost" type="button">Connect Google Sheet</button>';
 
-  const setStatus = msg => { $('sheet-status').textContent = msg || ''; };
+  const app = () => window.SchemaApp || {};
+  const stamp = () => new Date().toLocaleTimeString('en-GB');
+
+  // Mirrors progress into the header card: title is the headline state, sub
+  // the detail line under it.
+  function report(state, title, sub) {
+    if (app().setConnection) app().setConnection({ state: state, title: title, sub: sub });
+  }
+  const setStatus = msg => report('busy', 'Google Sheet', msg || '');
 
   function findCol(head, words) {
     for (let i = 0; i < head.length; i++) {
@@ -202,18 +208,18 @@
       .then(([data, faqData, lineCommentsData]) => {
         const result = attachLineComments(attachFaqLive(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []);
         window.SchemaApp.setData(result, 'sheet');
-        const when = new Date().toLocaleTimeString('en-GB');
-        setStatus(result.warnings.length
-          ? 'Loaded ' + tab + ' · ' + when + ' · skipped ' + result.warnings.length + ' cell(s) with invalid JSON (see console)'
-          : 'Loaded ' + tab + ' · ' + when);
+        $('sheet-connect').textContent = 'Reconnect';
+        report('ok', 'Google Sheet connected',
+          (result.site || tab) + ' · Last loaded: ' + stamp() +
+          (result.warnings.length ? ' · skipped ' + result.warnings.length + ' invalid cell(s)' : ''));
         if (result.warnings.length) result.warnings.forEach(w => console.warn('Schema Tracker sheet:', w));
       })
-      .catch(err => setStatus('Could not load "' + tab + '": ' + err.message));
+      .catch(err => report('error', 'Could not load sheet', '"' + tab + '": ' + err.message));
   }
 
   function connect() {
     if (typeof google === 'undefined' || !google.accounts) {
-      setStatus('Google sign-in script has not loaded yet — try again in a moment.');
+      report('error', 'Google sign-in not ready', 'The sign-in script is still loading — try again in a moment.');
       return;
     }
     if (!tokenClient) {
@@ -227,7 +233,7 @@
     }
     setStatus('Signing in…');
     tokenClient.callback = resp => {
-      if (resp.error) { setStatus('Sign-in failed: ' + resp.error); return; }
+      if (resp.error) { report('error', 'Sign-in failed', resp.error); return; }
       currentToken = resp.access_token;
       setStatus('Reading sheet tabs…');
       fetchTabs(currentToken)
@@ -239,7 +245,7 @@
           sel.hidden = tabs.length < 2;
           loadTab(preferred);
         })
-        .catch(err => setStatus('Could not read spreadsheet: ' + err.message));
+        .catch(err => report('error', 'Could not read spreadsheet', err.message));
     };
     tokenClient.requestAccessToken({ prompt: '' });
   }

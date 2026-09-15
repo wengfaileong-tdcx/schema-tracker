@@ -9,18 +9,35 @@
 <body>
 <div class="wrap">
 
-  <h1>Schema Markup Tracker</h1>
-  <p class="lede">Every URL we maintain structured data for, with what changed and when.
-    Click a URL to see the change summary; the code sits behind the sections inside.</p>
+  <header class="top">
+    <div class="top-title">
+      <h1>Schema Markup Tracker</h1>
+      <p class="lede">Every URL we maintain structured data for, with what changed and when.
+        Click a URL to jump to the code comparison below.</p>
+    </div>
+    <div id="conn" class="conn noprint" data-state="idle">
+      <span class="conn-dot" aria-hidden="true"></span>
+      <div class="conn-text">
+        <b id="conn-title">Not connected</b>
+        <div class="conn-sub" id="conn-sub">Using sample data</div>
+      </div>
+      <div class="conn-controls" id="conn-controls"></div>
+    </div>
+  </header>
 
   <div id="banner" class="noprint"></div>
 
-  <div id="recent" class="recent noprint"></div>
+  <div id="hero" class="noprint"></div>
+
+  <div id="recent" class="noprint"></div>
 
   <div class="topbar noprint">
     <div class="grow">
-      <label for="q">Search by URL</label>
-      <input type="search" id="q" placeholder="/about, /solutions…" autocomplete="off">
+      <label for="q" class="sr-only">Search</label>
+      <div class="search">
+        <svg class="search-i" viewBox="0 0 20 20" aria-hidden="true"><path d="M9 3a6 6 0 104.2 10.2l3.3 3.3 1.4-1.4-3.3-3.3A6 6 0 009 3zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
+        <input type="search" id="q" placeholder="Search by URL, title or path…" autocomplete="off">
+      </div>
     </div>
     <div>
       <label for="sort">Sort</label>
