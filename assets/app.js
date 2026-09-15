@@ -208,9 +208,11 @@
 
   /* ---------- latest changes feed ---------- */
 
-  // Every page whose newest version lands on the most recent date tracked —
-  // i.e. everything that changed in the latest batch, however many that is.
-  // Pages last touched in an earlier batch stay in the list below instead.
+  const FEED_PREVIEW = 8;
+
+  // An index for jumping to the reviews below, not a dashboard in its own
+  // right: every page whose newest version lands on the most recent tracked
+  // date, listed compactly, with only the first few shown until asked.
   function recentFeed() {
     const rows = DATA.pages
       .filter(p => (p.versions || []).length)
@@ -222,19 +224,30 @@
 
     const newest = rows[0].cur.date;
     const latest = rows.filter(r => r.cur.date === newest);
-    const recent = daysAgo(newest) <= RECENT_DAYS;
+    const total = latest.length;
+    const shown = Math.min(FEED_PREVIEW, total);
 
-    const items = latest.map(r =>
-      '<li class="rf-item' + (recent ? ' rf-new' : '') + '" data-url="' + esc(r.page.url) + '">' +
-      '<button type="button" class="rf-open">' +
-      '<span class="rf-title">' + esc(r.page.title || r.page.url) + '</span>' +
-      '<span class="rf-url">' + esc(r.page.url) + '</span>' +
-      '<span class="rf-date">' + esc(fmt(r.cur.date)) + '</span>' +
-      '</button></li>').join('');
+    const items = latest.map((r, i) => {
+      const hidden = i >= FEED_PREVIEW;
+      return '<li class="rf-item' + (hidden ? ' rf-extra' : '') + '"' + (hidden ? ' hidden' : '') +
+        ' data-url="' + esc(r.page.url) + '">' +
+        '<button type="button" class="rf-open">' +
+        '<span class="rf-u">' + esc(r.page.url) + '</span>' +
+        (r.page.title ? '<span class="rf-t">' + esc(r.page.title) + '</span>' : '') +
+        '</button></li>';
+    }).join('');
 
-    return '<h2 class="rf-h">Latest schema changes<span class="rf-sub"> · ' +
-      esc(fmt(newest)) + ' · ' + latest.length + ' page' + (latest.length === 1 ? '' : 's') +
-      '</span></h2><ul class="rf-list">' + items + '</ul>';
+    return '<div class="rf">' +
+      '<h2 class="rf-h">Latest schema changes</h2>' +
+      '<p class="rf-head"><span class="rf-n">' + total + '</span>' +
+      '<span class="rf-lab">URL' + (total === 1 ? '' : 's') + ' changed on ' + esc(fmt(newest)) + '</span></p>' +
+      '<ul class="rf-list">' + items + '</ul>' +
+      (total > FEED_PREVIEW
+        ? '<p class="rf-foot"><span class="rf-showing">Showing ' + shown + ' of ' + total + '</span>' +
+          '<button type="button" class="rf-toggle" data-total="' + total + '" data-preview="' + FEED_PREVIEW + '">' +
+          'View all ' + total + '</button></p>'
+        : '') +
+      '</div>';
   }
 
   function drawRecent() {
@@ -242,6 +255,21 @@
   }
 
   document.addEventListener('click', function (e) {
+    /* expand or collapse the rest of the index */
+    const toggle = e.target.closest('.rf-toggle');
+    if (toggle) {
+      const wrap = toggle.closest('.rf');
+      const open = toggle.dataset.open === '1';
+      const total = +toggle.dataset.total, preview = +toggle.dataset.preview;
+      wrap.querySelectorAll('.rf-extra').forEach(li => { li.hidden = open; });
+      toggle.dataset.open = open ? '0' : '1';
+      toggle.textContent = open ? 'View all ' + total : 'Show fewer';
+      wrap.querySelector('.rf-showing').textContent =
+        'Showing ' + (open ? Math.min(preview, total) : total) + ' of ' + total;
+      return;
+    }
+
+    /* jump to a page's review section */
     const item = e.target.closest('.rf-item');
     if (!item) return;
     const details = document.querySelector('#list details.page[data-url="' + CSS.escape(item.dataset.url) + '"]');

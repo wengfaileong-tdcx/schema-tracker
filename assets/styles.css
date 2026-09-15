@@ -37,18 +37,23 @@ button.mini{font-size:12.5px;padding:4px 10px}
 /* ---------- google sheet connect bar ---------- */
 .sheet-bar{display:flex;align-items:center;gap:10px;margin-bottom:18px}
 
-/* ---------- latest changes feed ---------- */
-.rf-h{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em}
-.rf-sub{font-weight:400;text-transform:none;letter-spacing:0}
-.rf-list{list-style:none;margin:0 0 24px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
-.rf-item{background:var(--paper);border:1px solid var(--rule);border-radius:6px}
-.rf-item.rf-new{border-color:#a9c3e8}
-.rf-open{width:100%;text-align:left;border:0;background:none;padding:11px 13px;border-radius:6px;cursor:pointer;display:block}
-.rf-open:hover{background:#f7f9fa}
-.rf-title{display:block;font-size:14.5px;font-weight:600}
-.rf-url{display:block;margin-top:3px;font-size:13px;color:var(--muted);word-break:break-all}
-.rf-date{display:block;margin-top:5px;font-size:12.5px;color:var(--muted)}
-.rf-item.rf-new .rf-sum{color:var(--ink)}
+/* ---------- latest changes index ----------
+   A way in to the reviews below, deliberately light: no cards, no borders,
+   so the schema review sections stay the main event. */
+.rf{margin:0 0 22px}
+.rf-h{font-size:11.5px;font-weight:600;color:var(--muted);margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em}
+.rf-head{display:flex;align-items:baseline;gap:7px;margin:0 0 7px}
+.rf-n{font-size:25px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.rf-lab{font-size:13px;color:var(--muted)}
+.rf-list{list-style:none;margin:0;padding:0;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:0 20px}
+.rf-open{width:100%;text-align:left;border:0;background:none;padding:2px 0;cursor:pointer;
+  display:flex;align-items:baseline;gap:8px;font-size:13.5px;min-width:0}
+.rf-u{color:var(--focus);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.rf-open:hover .rf-u{text-decoration:underline}
+.rf-t{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.rf-foot{display:flex;align-items:baseline;gap:10px;margin:8px 0 0;font-size:12.5px;color:var(--muted)}
+.rf-toggle{border:0;background:none;padding:0;cursor:pointer;font-size:12.5px;color:var(--focus);text-decoration:underline}
 
 /* ---------- page rows ---------- */
 .page{background:var(--paper);border:1px solid var(--rule);border-radius:6px;margin-bottom:10px;overflow:hidden}
