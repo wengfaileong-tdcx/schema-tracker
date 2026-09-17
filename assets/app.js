@@ -35,11 +35,18 @@
     return (page.versions || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }
 
+  // Not everything tracked is JSON-LD — an llms.txt is plain text, and has
+  // to be printed, diffed and summarised as text rather than parsed.
+  const isText = v => !!v && v.kind === 'text';
+  const show = v => isText(v) ? String(v.schema) : D.pretty(v.schema, false);
+  const cmpOpts = (v, extra) => Object.assign({ full: false, sort: true, context: 3, text: isText(v) }, extra || {});
+
   function summaryFor(page, i) {
     const vs = ordered(page);
     const cur = vs[i], prev = vs[i + 1];
     if (cur.summary && cur.summary.length) return cur.summary;
-    return D.summarise(prev ? prev.schema : null, cur.schema);
+    const before = prev ? prev.schema : null;
+    return isText(cur) ? D.summariseText(before, cur.schema) : D.summarise(before, cur.schema);
   }
 
   const cls = t => /^Added/.test(t) ? 'add'
@@ -147,9 +154,12 @@
   const changesPill = n =>
     '<span class="pill pill-chg">' + n + ' change' + (n === 1 ? '' : 's') + '</span>';
 
-  const typePills = (schema, max) =>
-    schemaTypes(schema).slice(0, max || 2)
+  // A text file has no @type, so name the file itself instead.
+  const typePills = (v, url, max) => {
+    const types = isText(v) ? [(pathOf(url).split('/').pop() || 'Text')] : schemaTypes(v.schema);
+    return types.slice(0, max || 2)
       .map(t => '<span class="pill pill-type">' + esc(t) + '</span>').join('');
+  };
 
   const extLink = url => /^https?:\/\//.test(url)
     ? '<a class="ext" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' +
@@ -210,7 +220,7 @@
       '<div class="foldbar"><span class="count">' + esc(cur.version) + ' · live now</span>' +
       '<span class="spacer"></span>' +
       '<button class="mini copy-schema" type="button">Copy schema</button></div>' +
-      '<pre class="code">' + esc(D.pretty(cur.schema, false)) + '</pre>' +
+      '<pre class="code">' + esc(show(cur)) + '</pre>' +
       '</div></details></div>';
 
     /* 3. compare any two versions */
@@ -316,7 +326,7 @@
         '<span class="rf-n">' + (i + 1) + '</span>' +
         '<span class="rf-t">' + esc(r.page.title || pathOf(r.page.url)) + '</span>' +
         '<span class="rf-u">' + esc(pathOf(r.page.url)) + '</span>' +
-        '<span class="rf-pills">' + changesPill(changeCount(r.page)) + typePills(r.cur.schema, 2) + '</span>' +
+        '<span class="rf-pills">' + changesPill(changeCount(r.page)) + typePills(r.cur, r.page.url, 2) + '</span>' +
         '<span class="rf-d">' + esc(fmt(r.cur.date)) + '</span>' +
         '<span class="chev"></span>' +
         '</button></li>';
@@ -433,8 +443,9 @@
     return range.intersectsNode(row) ? sel.toString().trim() : '';
   }
 
-  function renderDiffInto(host, prev, cur, full, commentOpts) {
-    const r = D.compare(prev, cur, { full: full, sort: true, context: 3, commentOpts: commentOpts });
+  function renderDiffInto(host, prevV, curV, full, commentOpts) {
+    const r = D.compare(prevV.schema, curV.schema,
+      cmpOpts(curV, { full: full, commentOpts: commentOpts }));
     host.innerHTML = r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html;
   }
 
@@ -447,7 +458,7 @@
       if (host && !host.dataset.done) {
         const page = pageByUrl(d.dataset.diff);
         const vs = ordered(page);
-        renderDiffInto(host, vs[1].schema, vs[0].schema, false,
+        renderDiffInto(host, vs[1], vs[0], false,
           { diffId: DIFF_CODE, comments: commentsFor(page, DIFF_CODE), canPost: canComment() });
         host.dataset.done = '1';
       }
@@ -465,7 +476,7 @@
       const on = t.dataset.full === '1' ? 0 : 1;
       t.dataset.full = on;
       t.textContent = on ? 'Show changes only' : 'Show full code';
-      renderDiffInto(fold.querySelector('.diffhost'), vs[1].schema, vs[0].schema, !!on,
+      renderDiffInto(fold.querySelector('.diffhost'), vs[1], vs[0], !!on,
         { diffId: DIFF_CODE, comments: commentsFor(page, DIFF_CODE), canPost: canComment() });
       return;
     }
@@ -577,9 +588,9 @@
       let h = chgList(summaryFor(page, i));
       if (v.note) h += '<p class="flat" style="margin-top:9px">' + esc(v.note) + '</p>';
       h += '<details class="fold"><summary>View schema for ' + esc(v.version) + '</summary>' +
-        '<div class="inner"><pre class="code">' + esc(D.pretty(v.schema, false)) + '</pre></div></details>';
+        '<div class="inner"><pre class="code">' + esc(show(v)) + '</pre></div></details>';
       if (prev) {
-        const r = D.compare(prev.schema, v.schema, { full: false, sort: true, context: 3 });
+        const r = D.compare(prev.schema, v.schema, cmpOpts(v));
         h += '<details class="fold"><summary>Compare with ' + esc(prev.version) + '</summary>' +
           '<div class="inner">' + (r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html) +
           '</div></details>';
@@ -598,7 +609,7 @@
       const host = fold.querySelector('.abhost');
       if (a === b) { host.innerHTML = '<div class="flat">Pick two different versions.</div>'; return; }
       const older = Math.max(a, b), newer = Math.min(a, b);
-      const r = D.compare(vs[older].schema, vs[newer].schema, { full: false, sort: true, context: 3 });
+      const r = D.compare(vs[older].schema, vs[newer].schema, cmpOpts(vs[newer]));
       host.innerHTML = '<p class="count" style="padding:0 0 7px">' +
         esc(vs[older].version) + ' → ' + esc(vs[newer].version) + '</p>' +
         (r.error ? '<div class="err">' + esc(r.error) + '</div>' : r.html);

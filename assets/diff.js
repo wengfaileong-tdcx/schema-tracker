@@ -55,7 +55,14 @@ window.SchemaDiff = (function () {
       : JSON.stringify(v, null, 2);
   }
 
-  function toLines(input, sort) {
+  // asText: content that isn't JSON-LD at all (an llms.txt, say) — keep it
+  // exactly as written and diff it line by line.
+  function toLines(input, sort, asText) {
+    if (asText) {
+      if (input == null || String(input) === '') return { lines: [], error: null, empty: true };
+      const s = String(input);
+      return { lines: s.split('\n'), error: null, value: s };
+    }
     const p = parse(input);
     if (p.error) return { lines: [], error: p.error };
     if (p.empty) return { lines: [], error: null, empty: true };
@@ -175,6 +182,55 @@ window.SchemaDiff = (function () {
       .concat(group(out.removed).map(s => 'Removed ' + s))
       .concat(out.changed.map(c =>
         'Updated ' + label(c.path) + ' (' + short(c.from) + ' → ' + short(c.to) + ')'));
+
+    if (!items.length) return ['No change'];
+    const cap = max || 14;
+    return items.length > cap
+      ? items.slice(0, cap).concat(['and ' + (items.length - cap) + ' more'])
+      : items;
+  }
+
+  /* ---------- summary for plain text (llms.txt and the like) ---------- */
+
+  const isHeading = s => /^\s{0,3}#{1,6}\s+\S/.test(s);
+  const headingOf = s => s.replace(/^\s*#+\s*/, '').trim();
+
+  // Reports by Markdown section rather than by line number, so "Added
+  // Pricing and Availability" reads the way someone reviewing the file
+  // thinks about it.
+  function summariseText(prevText, curText, max) {
+    if (prevText == null) return ['Initial version'];
+    const d = lines(String(prevText).split('\n'), String(curText).split('\n'));
+
+    const order = [], byName = {};
+    const touch = name => {
+      const key = name || 'the opening section';
+      if (!byName[key]) { byName[key] = { name: key, add: 0, del: 0, isNew: false, isGone: false }; order.push(byName[key]); }
+      return byName[key];
+    };
+
+    let context = null;
+    d.forEach(x => {
+      const heading = isHeading(x.s);
+      if (x.t === '=') { if (heading) context = headingOf(x.s); return; }
+      if (heading) {
+        context = headingOf(x.s);
+        const s = touch(context);
+        if (x.t === '+') s.isNew = true; else s.isGone = true;
+        return;
+      }
+      const s = touch(context);
+      if (x.t === '+') s.add++; else s.del++;
+    });
+
+    const items = order.filter(s => s.isNew || s.isGone || s.add || s.del).map(s => {
+      if (s.isNew && !s.isGone) return 'Added ' + s.name;
+      if (s.isGone && !s.isNew) return 'Removed ' + s.name;
+      const bits = [];
+      if (s.add) bits.push('+' + s.add);
+      if (s.del) bits.push('−' + s.del);
+      return 'Updated ' + s.name + (bits.length ? ' (' + bits.join(' ') + ' lines)' : '');
+    });
 
     if (!items.length) return ['No change'];
     const cap = max || 14;
@@ -359,9 +415,10 @@ window.SchemaDiff = (function () {
   function compare(prev, cur, opts) {
     const o = opts || {};
     const sort = o.sort !== false;
+    const asText = !!o.text;
     const lab = o.labels || {};
     const leftName = lab.left || 'Previous', rightName = lab.right || 'Current';
-    const A = toLines(prev, sort), B = toLines(cur, sort);
+    const A = toLines(prev, sort, asText), B = toLines(cur, sort, asText);
     if (A.error || B.error) {
       return {
         error: (A.error ? leftName + ' — ' + A.error : '') +
@@ -370,18 +427,19 @@ window.SchemaDiff = (function () {
       };
     }
     const d = lines(A.lines, B.lines);
+    const before = A.value == null ? null : A.value;
     return {
       d: d,
       add: d.filter(x => x.t === '+').length,
       del: d.filter(x => x.t === '-').length,
-      summary: summarise(A.value == null ? null : A.value, B.value),
+      summary: asText ? summariseText(before, B.value) : summarise(before, B.value),
       html: splitView(d, !!o.full, o.context, o.labels, o.commentOpts)
     };
   }
 
   return {
     extract: extract, sortKeys: sortKeys, parse: parse, pretty: pretty,
-    toLines: toLines, lines: lines, summarise: summarise,
+    toLines: toLines, lines: lines, summarise: summarise, summariseText: summariseText,
     splitView: splitView, compare: compare, esc: esc, commentPanel: commentPanel
   };
 })();

@@ -66,11 +66,13 @@
         .map(c => ({ date: toIsoDate(c.h), raw: (r[c.i] || '').trim() }))
         .filter(v => v.raw)
         .map(v => {
-          // Cells hold either a raw JSON object or a pasted <script> block —
-          // parse() (shared with the rest of the dashboard) accepts either,
-          // and this turns it into a real object so the diff/summary code
-          // (which expects parsed values, not text) works the same as it
-          // does for data/schema-history.js.
+          // A cell opening with {, [ or <script is meant to be JSON-LD, so a
+          // parse failure there is a real error worth reporting. Anything
+          // else — an llms.txt, robots.txt, any plain text file we track — is
+          // kept verbatim and diffed as text.
+          if (!/^[[{]|^<script/i.test(v.raw)) {
+            return { version: v.date, date: v.date, kind: 'text', schema: v.raw };
+          }
           const parsed = D.parse(v.raw);
           if (parsed.error) { badCells.push(url + ' @ ' + v.date + ': ' + parsed.error); return null; }
           return { version: v.date, date: v.date, schema: parsed.value };

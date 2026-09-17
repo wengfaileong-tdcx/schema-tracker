@@ -15,6 +15,11 @@
    - Adding a new version for a page is just adding a new dated column
      on the right and filling in that row's cell — leave other rows'
      cells in that column blank if they didn't change that day.
+   - Cells don't have to be JSON-LD. A cell starting with {, [ or
+     <script is treated as markup and must parse; anything else (an
+     llms.txt, robots.txt, any plain text file you track) is kept as
+     written and diffed line by line, with changes summarised by
+     Markdown section rather than by property.
 
    clientId and spreadsheetId come from Google Cloud Console / the
    sheet's own URL — see README.md, "Connecting a Google Sheet".
