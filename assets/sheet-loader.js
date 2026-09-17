@@ -55,8 +55,15 @@
       .map((h, i) => ({ h: h, i: i }))
       .filter(c => !fixed.has(c.i) && c.h);
     if (!versionCols.length) throw new Error('No version columns found — add a dated column (YYYYMMDD) after Title/URL/Status.');
+    // Every column that isn't Title/URL/Status is read as a version, so a
+    // differently-shaped tab lands here. Name the offending headers and the
+    // layout expected, rather than just the first one that failed.
     const badHeaders = versionCols.filter(c => !looksLikeDate(c.h));
-    if (badHeaders.length) throw new Error('Version column "' + badHeaders[0].h + '" is not a YYYYMMDD date.');
+    if (badHeaders.length) {
+      throw new Error('this tab is not in the expected layout. Every column after Title, URL and Status ' +
+        'is read as a version and needs a date header like 20260917, but found ' +
+        badHeaders.map(c => '"' + c.h + '"').join(', ') + '.');
+    }
 
     const badCells = [];
     const pages = rows.slice(1).map(r => {

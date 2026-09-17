@@ -681,6 +681,8 @@
       $('conn').dataset.state = c.state || 'idle';
       $('conn-title').textContent = c.title || 'Not connected';
       $('conn-sub').textContent = c.sub || '';
+      // Shown in full on hover, since the line is clipped unless it's an error.
+      $('conn-sub').title = c.sub || '';
     }
   };
 
