@@ -199,12 +199,17 @@
 
   function appendLineComment(token, url, diffId, lineKey, context, name, text) {
     const ts = new Date().toISOString();
-    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:H';
+    // A:G deliberately stops short of the Resolved column. Sheets appends
+    // after the last row holding data *in the range given*, and a checkbox
+    // ticked down the whole of that column counts as data on every row — so
+    // including it would push each new comment below thousands of blank
+    // rows. Leaving Resolved out also preserves whatever checkbox is already
+    // sitting on the row, which starts unticked.
+    const range = encodeURIComponent(cfg.lineCommentsTab) + '!A:G';
     return api(token, '/values/' + range + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      // Trailing '' leaves Resolved blank — a new comment is always open.
-      body: JSON.stringify({ values: [[url, diffId, lineKey, context, name, text, ts, '']] })
+      body: JSON.stringify({ values: [[url, diffId, lineKey, context, name, text, ts]] })
     }).then(() => ({ name: name, text: text, ts: ts }));
   }
 
