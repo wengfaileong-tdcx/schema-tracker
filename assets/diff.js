@@ -311,18 +311,38 @@ window.SchemaDiff = (function () {
       (open ? '<span class="ln-cm-count">' + open + '</span>' : '') + '</button>';
   }
 
+  const initials = n => {
+    const parts = String(n || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+    return parts.length ? parts.map(w => w.charAt(0)).join('').toUpperCase() : '?';
+  };
+
+  // One comment, laid out as a message: who said it, then what they said.
+  // The quoted line it refers to is kept small and muted underneath the name
+  // so it reads as a reference, not as the comment itself.
+  const commentItem = c =>
+    '<li class="cm-item' + (c.resolved ? ' cm-resolved' : '') + '">' +
+    '<span class="cm-av">' + esc(initials(c.name)) + '</span>' +
+    '<div class="cm-b">' +
+    '<div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b><span class="cm-when">' +
+    esc(String(c.ts || '').slice(0, 10)) + '</span>' +
+    (c.resolved ? '<span class="cm-done">Resolved</span>' : '') + '</div>' +
+    (c.context ? '<blockquote class="cm-ctx">' + esc(c.context) + '</blockquote>' : '') +
+    '<p class="cm-text">' + esc(c.text) + '</p>' +
+    '</div></li>';
+
   function commentPanel(diffId, key, comments, canPost) {
-    const items = (comments || []).map(c =>
-      '<li' + (c.resolved ? ' class="cm-resolved"' : '') + '>' +
-      '<div class="cm-meta"><b>' + esc(c.name || 'Anonymous') + '</b> · ' + esc(String(c.ts || '').slice(0, 10)) +
-      (c.resolved ? ' · <span class="cm-done">Resolved</span>' : '') + '</div>' +
-      (c.context ? '<blockquote class="sel-quote">' + esc(c.context) + '</blockquote>' : '') +
-      '<p class="cm-text">' + esc(c.text) + '</p></li>').join('');
+    const list = comments || [];
+    const items = list.map(commentItem).join('');
     return '<div class="ln-cm-panel" data-diff-id="' + escAttr(diffId) + '" data-line-key="' + escAttr(key) + '" hidden>' +
-      '<ul class="cm-list">' + (items || '<li class="cm-empty">No comments yet.</li>') + '</ul>' +
+      '<div class="cm-head">' + (list.length
+        ? list.length + ' comment' + (list.length === 1 ? '' : 's') + ' on this line'
+        : 'No comments on this line yet') + '</div>' +
+      '<ul class="cm-list">' + items + '</ul>' +
       (canPost
-        ? '<blockquote class="sel-quote ln-cm-quote" hidden></blockquote>' +
-          '<div class="cm-form"><input type="text" class="cm-name" placeholder="Your name">' +
+        ? '<div class="cm-form"><div class="cm-head cm-head-add">Add a comment</div>' +
+          '<div class="cm-on" hidden><span class="cm-on-l">On the highlighted text</span>' +
+          '<blockquote class="cm-ctx ln-cm-quote"></blockquote></div>' +
+          '<input type="text" class="cm-name" placeholder="Your name">' +
           '<textarea class="cm-body" placeholder="Add a comment…" rows="2"></textarea>' +
           '<div class="foldbar"><button class="mini ln-cm-post" type="button">Post comment</button>' +
           '<span class="count ln-cm-msg"></span></div></div>'
@@ -440,6 +460,7 @@ window.SchemaDiff = (function () {
   return {
     extract: extract, sortKeys: sortKeys, parse: parse, pretty: pretty,
     toLines: toLines, lines: lines, summarise: summarise, summariseText: summariseText,
-    splitView: splitView, compare: compare, esc: esc, commentPanel: commentPanel
+    splitView: splitView, compare: compare, esc: esc,
+    commentPanel: commentPanel, commentItem: commentItem
   };
 })();

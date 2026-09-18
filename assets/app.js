@@ -519,14 +519,16 @@
       panel.hidden = !panel.hidden;
       const quote = panel.querySelector('.ln-cm-quote');
       if (quote) {
-        // Fall back to the whole line when nothing narrower is highlighted.
+        // Whatever is posted records the line it refers to, but only an
+        // actual highlight is worth quoting back: the line itself is right
+        // above the panel, so repeating it just adds a block to read past.
         const cellTexts = [].slice.call(row.querySelectorAll('.cell .tx')).map(x => x.textContent.trim());
         const lineText = cellTexts.length > 1 && cellTexts[0] !== cellTexts[1]
           ? cellTexts[0] + '  →  ' + cellTexts[1]
           : (cellTexts[0] || cellTexts[1] || '');
         panel.dataset.snippet = snippet || lineText;
-        quote.textContent = panel.dataset.snippet;
-        quote.hidden = !panel.dataset.snippet;
+        quote.textContent = snippet;
+        panel.querySelector('.cm-on').hidden = !snippet;
       }
       if (!panel.hidden) {
         const body = panel.querySelector('.cm-body');
@@ -552,16 +554,17 @@
         t.disabled = false;
         if (err) { msg.textContent = 'Could not post: ' + err.message; return; }
         const list = panel.querySelector('.cm-list');
-        const empty = list.querySelector('.cm-empty');
-        if (empty) empty.remove();
-        list.insertAdjacentHTML('beforeend',
-          '<li><div class="cm-meta"><b>' + esc(entry.name) + '</b> · ' + esc(String(entry.ts || '').slice(0, 10)) + '</div>' +
-          (context ? '<blockquote class="sel-quote">' + esc(context) + '</blockquote>' : '') +
-          '<p class="cm-text">' + esc(entry.text) + '</p></li>');
+        // Rendered by the same helper the panel uses, so a comment looks the
+        // same whether it just arrived or came back from the sheet.
+        list.insertAdjacentHTML('beforeend', D.commentItem({
+          name: entry.name, text: entry.text, ts: entry.ts, context: context
+        }));
+        const n = list.querySelectorAll('.cm-item').length;
+        panel.querySelector('.cm-head').textContent = n + ' comment' + (n === 1 ? '' : 's') + ' on this line';
         const cmBtn = row && row.querySelector('.ln-cm-btn');
         if (cmBtn) {
-          const n = list.querySelectorAll('li').length;
           cmBtn.classList.add('has-cm');
+          cmBtn.classList.remove('all-done');
           const countEl = cmBtn.querySelector('.ln-cm-count');
           if (countEl) countEl.textContent = n;
           else cmBtn.insertAdjacentHTML('beforeend', '<span class="ln-cm-count">' + n + '</span>');
