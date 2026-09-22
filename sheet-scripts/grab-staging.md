@@ -34,6 +34,29 @@ values where they belong.
 The same bookmarklet works on the live site too, if you ever want to refresh
 those columns by hand instead of waiting for the formulas.
 
+## Why not a button, in the sheet or the dashboard?
+
+**In the sheet:** an Apps Script menu item, custom function or trigger all run
+on Google's servers. A button changes what starts the fetch, not where it
+comes from, so it hits the same VPN wall as the formulas.
+
+**In the dashboard:** the person clicking is on the VPN, so staging is
+reachable — but the browser refuses to hand the response to JavaScript,
+because staging sends no `Access-Control-Allow-Origin` header. Fetching
+`staging.llmsource.com` from `wengfaileong-tdcx.github.io` fails with
+`TypeError: Failed to fetch`, and `mode: 'no-cors'` returns an opaque
+response with nothing readable in it.
+
+That one is fixable, if it's worth it: staging only has to send
+
+```
+Access-Control-Allow-Origin: https://wengfaileong-tdcx.github.io
+```
+
+and a dashboard button could then pull staging live, with no sheet round-trip
+and nothing to paste. It is a staging-only, single-origin header. Until then,
+this bookmarklet is the way in — and it needs nothing from anyone else.
+
 ## Things to know
 
 - **This is a manual snapshot.** Unlike the live columns it will not refresh
