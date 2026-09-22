@@ -167,8 +167,7 @@
         '<p class="hint">In the <b>' + esc(window.SHEET_CONFIG && window.SHEET_CONFIG.faqTab || 'FAQ Live') +
         '</b> tab, add a <b>' + esc(spec.column) + '</b> column and put ' +
         '<code>=' + esc(spec.formula) + '("' + esc(page.url) + '")</code> on this URL’s row, ' +
-        'then Reconnect. Add a <b>Staging ' + esc(spec.column.replace(/^Live /, '')) +
-        '</b> column too if you want to compare against staging.</p>' +
+        'then Reconnect.</p>' +
         '</div></details></div>';
     }
     const first = syncCompare(spec, page, proposed, sources[0]);
@@ -719,49 +718,6 @@
     this.textContent = anyClosed ? 'Collapse all' : 'Expand all';
   });
 
-  /* ---------- the staging grabber, offered where the team will find it ----------
-     A bookmarklet has to live in each person's own browser, so rather than
-     passing the source around, the dashboard hands it out: drag the link to
-     the bookmarks bar. Kept as a JS string and assigned to .href so none of
-     its quotes or ampersands need HTML-escaping. */
-
-  const GRAB_BOOKMARKLET = "javascript:(function(){var f=[].slice.call(document.querySelectorAll('h3 button[aria-controls]')).map(function(b){var s=b.querySelector('span'),d=document.getElementById(b.getAttribute('aria-controls'));if(!s||!d)return null;return{q:s.textContent.replace(/\\s+/g,' ').trim(),a:d.textContent.replace(/\\s+/g,' ').trim()}}).filter(function(x){return x&&x.q&&x.a});var g=function(s,a){var e=document.querySelector(s);return e?String(e[a]||e.getAttribute(a)||'').replace(/\\s+/g,' ').trim():''};var m={title:(document.title||'').replace(/\\s+/g,' ').trim(),description:g('meta[name=\"description\"]','content'),canonical:g('link[rel=\"canonical\"]','href'),lang:(document.documentElement.getAttribute('lang')||'').trim(),ogTitle:g('meta[property=\"og:title\"]','content'),ogDescription:g('meta[property=\"og:description\"]','content')};if(!f.length&&!m.title){alert('Nothing found on this page. The markup may have changed.');return}var p=(f.length?JSON.stringify(f):'')+'\\t'+JSON.stringify(m);var ok=function(){alert('Copied '+f.length+' FAQ items and the page metadata.\\n\\nIn the sheet, click this page’s Staging FAQ cell and paste — it fills Staging FAQ and Staging Meta together.')};var ask=function(){window.prompt('Copy this (Cmd+C), then paste into the Staging FAQ cell:',p)};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(p).then(ok,ask)}else{ask()}})();";
-
-  function drawTools() {
-    $('tools').innerHTML =
-      '<details class="tools"><summary>Set up the staging grabber</summary>' +
-      '<div class="tools-b">' +
-      '<p class="hint">Staging sits behind the VPN, so the sheet’s formulas can’t reach it — ' +
-      'it has to be copied from a browser that can. Each person installs this once, in their own browser.</p>' +
-      '<p class="tools-drag"><b>Drag this to your bookmarks bar:</b> ' +
-      '<a class="grab-link" href="#">Grab page data</a>' +
-      '<button type="button" class="mini grab-copy">Copy instead</button>' +
-      '<span class="count grab-msg"></span></p>' +
-      '<p class="hint">Then open a staging page, click the bookmark, and paste into that page’s ' +
-      '<b>Staging FAQ</b> cell — it fills Staging Meta beside it.</p>' +
-      '</div></details>';
-    $('tools').querySelector('.grab-link').href = GRAB_BOOKMARKLET;
-  }
-
-  document.addEventListener('click', function (e) {
-    // Clicking would run the grabber against the dashboard itself, which is
-    // never what someone means — they meant to drag it.
-    const link = e.target.closest('.grab-link');
-    if (link) {
-      e.preventDefault();
-      link.closest('.tools-b').querySelector('.grab-msg').textContent =
-        'Drag it to your bookmarks bar rather than clicking, or use Copy instead.';
-      return;
-    }
-    if (e.target.classList.contains('grab-copy')) {
-      const msg = e.target.closest('.tools-b').querySelector('.grab-msg');
-      const done = ok => { msg.textContent = ok ? 'Copied — paste it as a new bookmark’s URL.' : 'Could not copy automatically.'; };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(GRAB_BOOKMARKLET).then(() => done(true), () => done(false));
-      } else done(false);
-    }
-  });
-
   /* back to top — a long diff leaves the index far out of reach */
   const toTop = $('totop');
   const showToTop = () => { toTop.hidden = window.pageYOffset < 400; };
@@ -791,7 +747,6 @@
     $('hero').innerHTML = heroBand();
     drawRecent();
     draw();
-    drawTools();
   }
 
   // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data
