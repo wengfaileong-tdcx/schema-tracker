@@ -112,7 +112,8 @@
       hint: 'What is published on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).',
       diffIds: { live: DIFF_FAQ, staging: DIFF_FAQ_STAGING },
       live: (page, which) => which === 'live' ? page.liveFaq : page.stagingFaq,
-      fromSchema: schema => { const f = findFaqPage(schema); return f ? trackedFaqPairs(f) : null; }
+      fromSchema: schema => { const f = findFaqPage(schema); return f ? trackedFaqPairs(f) : null; },
+      column: 'Live FAQ', formula: 'LIVE_FAQ', declares: 'an FAQPage block'
     },
     {
       key: 'meta',
@@ -120,7 +121,8 @@
       hint: 'The page’s own title, meta description, canonical and lang (left) vs. what the proposed schema says they should be (right).',
       diffIds: { live: DIFF_META, staging: DIFF_META_STAGING },
       live: (page, which) => metaFromLive(which === 'live' ? page.liveMeta : page.stagingMeta),
-      fromSchema: metaFromSchema
+      fromSchema: metaFromSchema,
+      column: 'Live Meta', formula: 'LIVE_META', declares: 'a WebPage block'
     }
   ];
 
@@ -148,9 +150,27 @@
   }
 
   function syncBlock(spec, page, cur) {
+    // Nothing declared in the schema means there is genuinely nothing to
+    // check here, so stay quiet.
     const proposed = spec.fromSchema(cur.schema);
-    const sources = proposed ? syncSources(spec, page) : [];
-    if (!sources.length) return '';
+    if (!proposed) return '';
+
+    // Declared but with nothing to compare against is a gap in the sheet, not
+    // an absence of work — say so, rather than vanishing and leaving someone
+    // wondering where the check went.
+    const sources = syncSources(spec, page);
+    if (!sources.length) {
+      return '<div class="block"><details class="fold sync-check sync-todo">' +
+        '<summary>' + esc(spec.title) + '<span class="count"> · not set up</span></summary>' +
+        '<div class="inner"><p class="hint">This page’s schema declares ' + esc(spec.declares) +
+        ', but the sheet has nothing live to compare it against yet.</p>' +
+        '<p class="hint">In the <b>' + esc(window.SHEET_CONFIG && window.SHEET_CONFIG.faqTab || 'FAQ Live') +
+        '</b> tab, add a <b>' + esc(spec.column) + '</b> column and put ' +
+        '<code>=' + esc(spec.formula) + '("' + esc(page.url) + '")</code> on this URL’s row, ' +
+        'then Reconnect. Add a <b>Staging ' + esc(spec.column.replace(/^Live /, '')) +
+        '</b> column too if you want to compare against staging.</p>' +
+        '</div></details></div>';
+    }
     const first = syncCompare(spec, page, proposed, sources[0]);
 
     const picker = sources.length > 1
