@@ -12,6 +12,8 @@
   const DIFF_CODE = 'View code changes';
   const DIFF_FAQ = 'FAQ sync check';
   const DIFF_FAQ_STAGING = 'FAQ sync check (staging)';
+  const DIFF_META = 'Metadata sync check';
+  const DIFF_META_STAGING = 'Metadata sync check (staging)';
 
   /* ---------- helpers ---------- */
 
@@ -74,16 +76,66 @@
     a: (q.acceptedAnswer && q.acceptedAnswer.text) || ''
   }));
 
-  // Which published versions of a page we can compare the proposed schema
-  // against. Staging only appears when the sheet has data for it.
-  const faqSources = page => [
-    { id: 'live', label: 'Live site', pairs: page.liveFaq, diffId: DIFF_FAQ },
-    { id: 'staging', label: 'Staging site', pairs: page.stagingFaq, diffId: DIFF_FAQ_STAGING }
-  ].filter(s => s.pairs && s.pairs.length);
+  /* ---------- metadata sync check (head tags vs. schema) ---------- */
 
-  // Compares one source against the tracked FAQPage schema.
-  function faqCompare(page, faqPage, source) {
-    const r = D.compare(source.pairs, trackedFaqPairs(faqPage), {
+  // The node describing the page itself. Prefers WebPage, else any *Page.
+  function findWebPage(schema) {
+    if (!schema || typeof schema !== 'object') return null;
+    const nodes = Array.isArray(schema) ? schema : schema['@graph'] ? schema['@graph'] : [schema];
+    let fallback = null;
+    for (let i = 0; i < nodes.length; i++) {
+      const types = [].concat((nodes[i] && nodes[i]['@type']) || []);
+      if (types.indexOf('WebPage') > -1) return nodes[i];
+      if (!fallback && types.some(t => /Page$/.test(t))) fallback = nodes[i];
+    }
+    return fallback;
+  }
+
+  // Both sides are reduced to the same four fields so the diff reads as a
+  // field-by-field comparison. A blank on the schema side is itself worth
+  // seeing — it means the markup never declared that field.
+  function metaFromSchema(schema) {
+    const p = findWebPage(schema);
+    if (!p) return null;
+    return { title: p.name || '', description: p.description || '', canonical: p.url || '', lang: p.inLanguage || '' };
+  }
+  const metaFromLive = m => m
+    ? { title: m.title || '', description: m.description || '', canonical: m.canonical || '', lang: m.lang || '' }
+    : null;
+
+  /* ---------- sync checks, live page vs. proposed schema ---------- */
+
+  const SYNCS = [
+    {
+      key: 'faq',
+      title: 'FAQ sync check with live site',
+      hint: 'What is published on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).',
+      diffIds: { live: DIFF_FAQ, staging: DIFF_FAQ_STAGING },
+      live: (page, which) => which === 'live' ? page.liveFaq : page.stagingFaq,
+      fromSchema: schema => { const f = findFaqPage(schema); return f ? trackedFaqPairs(f) : null; }
+    },
+    {
+      key: 'meta',
+      title: 'Metadata sync check with live site',
+      hint: 'The page’s own title, meta description, canonical and lang (left) vs. what the proposed schema says they should be (right).',
+      diffIds: { live: DIFF_META, staging: DIFF_META_STAGING },
+      live: (page, which) => metaFromLive(which === 'live' ? page.liveMeta : page.stagingMeta),
+      fromSchema: metaFromSchema
+    }
+  ];
+
+  const syncByKey = key => SYNCS.filter(s => s.key === key)[0];
+
+  // Which published copies of a page we can compare against. Staging only
+  // appears when the sheet has data for it.
+  const syncSources = (spec, page) => [
+    { id: 'live', label: 'Live site', diffId: spec.diffIds.live },
+    { id: 'staging', label: 'Staging site', diffId: spec.diffIds.staging }
+  ].map(s => Object.assign(s, { data: spec.live(page, s.id) }))
+    .filter(s => s.data && (!Array.isArray(s.data) || s.data.length));
+
+  function syncCompare(spec, page, proposed, source) {
+    const r = D.compare(source.data, proposed, {
       full: false, sort: true, context: 3, labels: { left: source.label, right: 'Proposed' },
       commentOpts: { diffId: source.diffId, comments: commentsFor(page, source.diffId), canPost: canComment() }
     });
@@ -95,27 +147,28 @@
     };
   }
 
-  function faqSyncBlock(page, cur) {
-    const faqPage = findFaqPage(cur.schema);
-    const sources = faqPage ? faqSources(page) : [];
+  function syncBlock(spec, page, cur) {
+    const proposed = spec.fromSchema(cur.schema);
+    const sources = proposed ? syncSources(spec, page) : [];
     if (!sources.length) return '';
-    const first = faqCompare(page, faqPage, sources[0]);
+    const first = syncCompare(spec, page, proposed, sources[0]);
 
     const picker = sources.length > 1
       ? '<div class="foldbar"><span class="count">Compare against</span>' +
-        '<select class="faq-src" style="width:auto">' +
+        '<select class="sync-src" style="width:auto">' +
         sources.map(s => '<option value="' + esc(s.id) + '">' + esc(s.label) + '</option>').join('') +
         '</select></div>'
       : '';
 
     // Starts collapsed like every other section — the status in the summary
     // already says whether it needs a look.
-    return '<div class="block"><details class="fold faq-sync" data-url="' + esc(page.url) + '">' +
-      '<summary>FAQ sync check with live site<span class="count"> · <span class="faq-status">' +
+    return '<div class="block"><details class="fold sync-check" data-sync="' + esc(spec.key) + '"' +
+      ' data-url="' + esc(page.url) + '">' +
+      '<summary>' + esc(spec.title) + '<span class="count"> · <span class="sync-status">' +
       first.status + '</span></span></summary>' +
       '<div class="inner">' +
-      '<p class="hint">What is published on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).</p>' +
-      picker + '<div class="faqhost">' + first.html + '</div>' +
+      '<p class="hint">' + spec.hint + '</p>' +
+      picker + '<div class="synchost">' + first.html + '</div>' +
       '</div></details></div>';
   }
 
@@ -210,8 +263,9 @@
     }
     h += '</div>';
 
-    /* 1b. FAQ sync check, only when both a tracked FAQPage and live data exist */
-    h += faqSyncBlock(page, cur);
+    /* 1b. sync checks — each appears only where the schema declares the
+       thing being checked and the sheet has live data to check it against */
+    SYNCS.forEach(spec => { h += syncBlock(spec, page, cur); });
 
     /* 2. full current schema */
     h += '<div class="block">' +
@@ -619,17 +673,19 @@
     }
   });
 
-  /* switch the FAQ sync check between the live and staging page */
+  /* switch a sync check between the live and staging page */
   document.addEventListener('change', function (e) {
-    if (!e.target.classList.contains('faq-src')) return;
-    const fold = e.target.closest('.faq-sync');
+    if (!e.target.classList.contains('sync-src')) return;
+    const fold = e.target.closest('.sync-check');
+    const spec = syncByKey(fold.dataset.sync);
     const page = pageByUrl(fold.dataset.url);
-    const faqPage = findFaqPage(ordered(page)[0].schema);
-    const source = faqSources(page).filter(s => s.id === e.target.value)[0];
-    if (!faqPage || !source) return;
-    const out = faqCompare(page, faqPage, source);
-    fold.querySelector('.faqhost').innerHTML = out.html;
-    fold.querySelector('.faq-status').textContent = out.status;
+    if (!spec || !page) return;
+    const proposed = spec.fromSchema(ordered(page)[0].schema);
+    const source = syncSources(spec, page).filter(s => s.id === e.target.value)[0];
+    if (!proposed || !source) return;
+    const out = syncCompare(spec, page, proposed, source);
+    fold.querySelector('.synchost').innerHTML = out.html;
+    fold.querySelector('.sync-status').textContent = out.status;
   });
 
   /* ---------- boot ---------- */

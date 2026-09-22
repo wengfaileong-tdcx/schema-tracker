@@ -29,12 +29,23 @@
    one file). "range" below just picks which tab loads by default —
    it must match a real tab name exactly.
 
-   faqTab (optional): name of a tab with columns URL | Live FAQ, where
-   Live FAQ is filled by the LIVE_FAQ() Apps Script function (see
-   sheet-scripts/faq-live.gs). When a page's tracked schema contains an
-   FAQPage block and this tab has a matching URL, the dashboard shows a
-   "FAQ sync check" comparing the live page's Q&A against the tracked
-   schema. Leave blank to skip this entirely.
+   faqTab (optional): name of a tab holding what each page currently
+   publishes, for comparison against the schema proposed for it:
+
+     URL | Live FAQ | Live Meta | Staging FAQ | Staging Meta
+
+   URL is required; include whichever of the others you want. Fill them
+   with the Apps Script functions in sheet-scripts/faq-live.gs:
+   =LIVE_FAQ(A2) returns the page's visible Q&A, =LIVE_META(A2) returns
+   its title, meta description, canonical and lang. Point the Staging
+   columns at the staging URL to compare against a pre-release page.
+
+   The dashboard then shows, per page and only where there is both
+   schema and live data to compare:
+     "FAQ sync check"      — visible Q&A vs. the FAQPage block
+     "Metadata sync check" — head tags vs. WebPage name / description /
+                             url / inLanguage
+   Leave faqTab blank to skip both entirely.
 
    lineCommentsTab (optional): turns on commenting directly on a changed
    line inside "View code changes" or "FAQ sync check" — a 💬 button

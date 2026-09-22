@@ -115,17 +115,22 @@
     ? fetchValues(token, cfg.faqTab).catch(() => ({ values: [] }))
     : Promise.resolve({ values: [] });
 
-  // "FAQ Live" tab layout: URL | Live FAQ | Staging FAQ (optional), each FAQ
-  // cell a JSON array of {q,a} written by the LIVE_FAQ() Apps Script function
-  // — see sheet-scripts/faq-live.gs. Staging lets the dashboard compare the
-  // proposed schema against a pre-release page as well as the live one.
-  function attachFaqLive(data, rows) {
+  // "FAQ Live" tab layout: URL, then any of Live FAQ | Staging FAQ |
+  // Live Meta | Staging Meta. Each cell holds JSON written by the
+  // LIVE_FAQ() / LIVE_META() Apps Script functions — see
+  // sheet-scripts/faq-live.gs. Columns are matched on "faq" or "meta",
+  // with "staging" marking the pre-release copy of either.
+  function attachLivePage(data, rows) {
     if (!rows.length) return data;
     const head = rows[0].map(x => String(x || '').trim().toLowerCase());
     const uIdx = head.indexOf('url');
-    const sIdx = head.findIndex(h => h.indexOf('staging') > -1);
-    const fIdx = head.findIndex((h, i) => i !== sIdx && (h.indexOf('faq') > -1 || h.indexOf('live') > -1));
-    if (uIdx < 0 || (fIdx < 0 && sIdx < 0)) return data;
+    const col = (kind, staging) => head.findIndex(h =>
+      h.indexOf(kind) > -1 && (h.indexOf('staging') > -1) === staging);
+    const idx = {
+      liveFaq: col('faq', false), stagingFaq: col('faq', true),
+      liveMeta: col('meta', false), stagingMeta: col('meta', true)
+    };
+    if (uIdx < 0) return data;
 
     const parseCell = v => {
       const raw = (v || '').trim();
@@ -137,16 +142,14 @@
     rows.slice(1).forEach(r => {
       const url = (r[uIdx] || '').trim();
       if (!url) return;
-      byUrl[url] = {
-        live: fIdx > -1 ? parseCell(r[fIdx]) : null,
-        staging: sIdx > -1 ? parseCell(r[sIdx]) : null
-      };
+      const found = {};
+      Object.keys(idx).forEach(k => { if (idx[k] > -1) found[k] = parseCell(r[idx[k]]); });
+      byUrl[url] = found;
     });
     data.pages.forEach(p => {
       const found = byUrl[p.url];
       if (!found) return;
-      if (found.live) p.liveFaq = found.live;
-      if (found.staging) p.stagingFaq = found.staging;
+      Object.keys(found).forEach(k => { if (found[k]) p[k] = found[k]; });
     });
     return data;
   }
@@ -220,7 +223,7 @@
     setStatus('Loading ' + tab + '…');
     Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken)])
       .then(([data, faqData, lineCommentsData]) => {
-        const result = attachLineComments(attachFaqLive(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []);
+        const result = attachLineComments(attachLivePage(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []);
         window.SchemaApp.setData(result, 'sheet');
         $('sheet-connect').textContent = 'Reconnect';
         report('ok', 'Google Sheet connected',
