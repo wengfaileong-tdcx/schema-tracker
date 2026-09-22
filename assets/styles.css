@@ -58,6 +58,17 @@ button.mini{font-size:12.5px;padding:5px 10px}
 .btn-ghost{display:inline-flex;align-items:center;gap:4px;color:var(--focus);border-color:var(--rule);font-size:13.5px;font-weight:500}
 .count{font-size:13px;color:var(--muted);white-space:nowrap;padding-bottom:9px}
 
+/* ---------- team tools (bookmarklet handout) ---------- */
+.tools{margin-top:14px;border:1px solid var(--rule);border-radius:10px;background:var(--paper)}
+.tools>summary{cursor:pointer;list-style:none;padding:11px 16px;font-size:13px;font-weight:600;color:var(--muted)}
+.tools>summary::-webkit-details-marker{display:none}
+.tools>summary:hover{color:var(--ink)}
+.tools-b{padding:0 16px 16px}
+.tools-drag{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0;font-size:13.5px}
+.grab-link{display:inline-block;padding:7px 14px;border:1px solid var(--tint-line);border-radius:8px;
+  background:var(--tint);color:var(--focus);font-size:13.5px;font-weight:600;text-decoration:none;cursor:grab}
+.grab-link:hover{background:#e3ecfb}
+
 /* ---------- back to top ---------- */
 .totop{position:fixed;right:20px;bottom:20px;z-index:20;display:flex;align-items:center;gap:7px;
   padding:9px 15px 9px 12px;border-radius:22px;background:var(--paper);border:1px solid var(--rule);
