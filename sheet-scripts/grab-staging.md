@@ -1,30 +1,12 @@
-# Getting a page into the sheet by hand
+# Getting staging (or any VPN-only page) into the sheet
 
-## Try the formulas first
+`LIVE_FAQ()` and `LIVE_META()` are run by Google's servers. Those sit outside
+the company VPN, so they can fetch the public site but get blocked from
+`staging.llmsource.com` — the cell comes back as an error.
 
-`LIVE_FAQ()` and `LIVE_META()` work against any URL Google's servers can
-reach. As of this writing that includes `staging.llmsource.com`, which is
-publicly reachable despite being a pre-release environment — so the staging
-columns can simply be:
-
-```
-=LIVE_FAQ("https://staging.llmsource.com/solutions/agency")
-=LIVE_META("https://staging.llmsource.com/solutions/agency")
-```
-
-Put one in a cell and see. If it returns data, you don't need anything below,
-and the column keeps refreshing itself instead of going stale.
-
-## When the formulas can't reach it
-
-A genuinely restricted page — one behind the VPN, an IP allowlist or a login —
-will come back as an error, because Apps Script runs on Google's servers
-rather than on your laptop. **A button or custom menu in the sheet does not
-change that**: it would run in the same place. The fetch has to come from a
-machine that is allowed in, which is why this is a browser bookmarklet.
-
-It reads the page you have open and copies both the FAQ and the metadata in
-the format the sheet expects, so it's one click and one paste.
+Your own laptop is on the VPN, though. This bookmarklet reads the page you
+have open and copies both the FAQ and the metadata in the format the sheet
+expects, so it's one click and one paste.
 
 ## Install once
 
