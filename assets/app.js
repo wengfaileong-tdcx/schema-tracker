@@ -718,6 +718,66 @@
     this.textContent = anyClosed ? 'Collapse all' : 'Expand all';
   });
 
+  /* ---------- can this dashboard read a page directly? ----------
+     Two separate things have to be true, and they fail with the same browser
+     error, so the check distinguishes them: the page has to be reachable at
+     all (VPN), and it has to allow this origin to read the response (CORS). */
+
+  function drawTools() {
+    $('tools').innerHTML =
+      '<details class="tools"><summary>Check whether the dashboard can read a page</summary>' +
+      '<div class="tools-b">' +
+      '<p class="hint">For the dashboard to pull a page itself — rather than through the sheet — ' +
+      'it needs to reach the page <i>and</i> be allowed to read the response.</p>' +
+      '<div class="tools-row">' +
+      '<input type="text" class="probe-url" value="https://staging.llmsource.com/solutions/agency" ' +
+      'placeholder="https://staging.llmsource.com/…" spellcheck="false">' +
+      '<button type="button" class="mini probe-go">Check</button></div>' +
+      '<div class="probe-out"></div>' +
+      '</div></details>';
+  }
+
+  function probeReport(box, cls, text) {
+    const out = box.querySelector('.probe-out');
+    out.className = 'probe-out ' + cls;
+    out.innerHTML = text;
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.classList.contains('probe-go')) return;
+    const btn = e.target, box = btn.closest('.tools-b');
+    const url = box.querySelector('.probe-url').value.trim();
+    if (!url) { probeReport(box, 'probe-warn', 'Enter a URL first.'); return; }
+
+    const bust = (url.indexOf('?') > -1 ? '&' : '?') + 'cb=' + Date.now();
+    btn.disabled = true;
+    probeReport(box, '', 'Checking…');
+
+    fetch(url + bust)
+      .then(r => r.text())
+      .then(html => {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const title = (doc.querySelector('title') || {}).textContent || '(no title found)';
+        probeReport(box, 'probe-ok',
+          '<b>Readable.</b> Got ' + html.length.toLocaleString() + ' bytes; the page’s title is ' +
+          '“' + esc(title.trim()) + '”.<br>The dashboard can fetch this page directly — ' +
+          'staging comparison can be built on it.');
+      })
+      .catch(() =>
+        // The request may still have reached the server; no-cors tells us
+        // whether the wall was the network or the browser.
+        fetch(url + bust, { mode: 'no-cors' })
+          .then(() => probeReport(box, 'probe-warn',
+            '<b>Reached the page, but not allowed to read it.</b> The network side is fine, ' +
+            'so this is the missing CORS header. The site needs to send:<br>' +
+            '<code>Access-Control-Allow-Origin: ' + esc(location.origin) + '</code>'))
+          .catch(() => probeReport(box, 'probe-bad',
+            '<b>Couldn’t reach it at all.</b> Either you’re not on the VPN, the URL is wrong, ' +
+            'or the site is down. Nothing to do with CORS.'))
+      )
+      .then(() => { btn.disabled = false; });
+  });
+
   /* back to top — a long diff leaves the index far out of reach */
   const toTop = $('totop');
   const showToTop = () => { toTop.hidden = window.pageYOffset < 400; };
@@ -747,6 +807,7 @@
     $('hero').innerHTML = heroBand();
     drawRecent();
     draw();
+    drawTools();
   }
 
   // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data
