@@ -66,11 +66,11 @@
     }
 
     const badCells = [];
-    const pages = rows.slice(1).map(r => {
+    const pages = rows.slice(1).map((r, ri) => {
       const url = (r[urlIdx] || '').trim();
       if (!url) return null;
       const versions = versionCols
-        .map(c => ({ date: toIsoDate(c.h), raw: (r[c.i] || '').trim() }))
+        .map(c => ({ date: toIsoDate(c.h), raw: (r[c.i] || '').trim(), col: c.i }))
         .filter(v => v.raw)
         .map(v => {
           // A cell opening with {, [ or <script is meant to be JSON-LD, so a
@@ -78,15 +78,18 @@
           // else — an llms.txt, robots.txt, any plain text file we track — is
           // kept verbatim and diffed as text.
           if (!/^[[{]|^<script/i.test(v.raw)) {
-            return { version: v.date, date: v.date, kind: 'text', schema: v.raw };
+            return { version: v.date, date: v.date, kind: 'text', schema: v.raw, raw: v.raw, col: v.col };
           }
           const parsed = D.parse(v.raw);
           if (parsed.error) { badCells.push(url + ' @ ' + v.date + ': ' + parsed.error); return null; }
-          return { version: v.date, date: v.date, schema: parsed.value };
+          // raw and col let an edit from the dashboard write back to exactly
+          // this cell, and check nobody changed it in the meantime.
+          return { version: v.date, date: v.date, schema: parsed.value, raw: v.raw, col: v.col };
         })
         .filter(Boolean);
       if (!versions.length) return null;
-      const page = { url: url, versions: versions };
+      // Header is sheet row 1, so the first data row is row 2.
+      const page = { url: url, versions: versions, sheetRow: ri + 2, urlCol: urlIdx };
       if (titleIdx > -1 && r[titleIdx]) page.title = r[titleIdx].trim();
       if (statusIdx > -1 && r[statusIdx]) page.status = r[statusIdx].trim();
       return page;
@@ -216,12 +219,86 @@
     }).then(() => ({ name: name, text: text, ts: ts }));
   }
 
+  /* ---------- editing a schema cell from the dashboard ---------- */
+
+  // 0 -> A, 25 -> Z, 26 -> AA …
+  function colLetter(i) {
+    let s = '';
+    for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
+    return s;
+  }
+  const a1 = (tab, ref) => "'" + tab.replace(/'/g, "''") + "'!" + ref;
+  const pad2 = n => (n < 10 ? '0' : '') + n;
+  const todayStamp = () => {
+    const d = new Date();
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  };
+
+  // mode 'new' writes the text into today's dated column (adding the column
+  // if it isn't there yet); mode 'fix' overwrites the cell the current
+  // version came from. Either way the header row and the page's row are
+  // re-read first, so an edit never lands on a row that has moved or a cell
+  // someone else has changed since the dashboard loaded it.
+  function saveSchema(token, tab, page, cur, mode, text) {
+    const rowRef = page.sheetRow + ':' + page.sheetRow;
+    return api(token, '/values:batchGet?ranges=' + encodeURIComponent(a1(tab, '1:1')) +
+      '&ranges=' + encodeURIComponent(a1(tab, rowRef)))
+      .then(res => {
+        const head = ((res.valueRanges[0].values || [])[0] || []).map(x => String(x || '').trim());
+        const row = (res.valueRanges[1].values || [])[0] || [];
+        const stale = 'The sheet has changed since it was loaded. Reload the sheet and make the edit again.';
+        if (String(row[page.urlCol] || '').trim() !== page.url) throw new Error(stale);
+
+        const writes = [];
+        let col;
+        if (mode === 'fix') {
+          col = cur.col;
+          if (head[col] !== cur.version.replace(/-/g, '') || String(row[col] || '').trim() !== cur.raw) throw new Error(stale);
+        } else {
+          const stamp = todayStamp();
+          col = head.indexOf(stamp);
+          if (col > -1 && String(row[col] || '').trim()) {
+            throw new Error('This page already has a version dated ' + stamp + '. Use "Fix current version" to change it.');
+          }
+          if (col < 0) {
+            col = head.length;
+            writes.push({ range: a1(tab, colLetter(col) + '1'), values: [[stamp]] });
+          }
+        }
+        writes.push({ range: a1(tab, colLetter(col) + page.sheetRow), values: [[text]] });
+        return ensureColumns(token, tab, col + 1).then(() => writes);
+      })
+      // RAW so the text is stored exactly as typed — never read as a formula.
+      .then(writes => api(token, '/values:batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valueInputOption: 'RAW', data: writes })
+      }));
+  }
+
+  // Writing past the tab's last column fails, so widen it first if needed.
+  function ensureColumns(token, tab, needed) {
+    return api(token, '?fields=sheets.properties(title,sheetId,gridProperties.columnCount)')
+      .then(data => {
+        const p = (data.sheets || []).map(s => s.properties).filter(x => x.title === tab)[0];
+        if (!p || p.gridProperties.columnCount >= needed) return;
+        return api(token, ':batchUpdate', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests: [{ appendDimension: {
+            sheetId: p.sheetId, dimension: 'COLUMNS', length: needed - p.gridProperties.columnCount } }] })
+        });
+      });
+  }
+
   let tokenClient = null;
   let currentToken = null;
+  let currentTab = null;
 
   function loadTab(tab) {
+    currentTab = tab;
     setStatus('Loading ' + tab + '…');
-    Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken)])
+    return Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken)])
       .then(([data, faqData, lineCommentsData]) => {
         const result = attachLineComments(attachLivePage(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []);
         window.SchemaApp.setData(result, 'sheet');
@@ -242,7 +319,7 @@
     if (!tokenClient) {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: cfg.clientId,
-        scope: cfg.lineCommentsTab
+        scope: cfg.lineCommentsTab || cfg.allowSchemaEdits
           ? 'https://www.googleapis.com/auth/spreadsheets'
           : 'https://www.googleapis.com/auth/spreadsheets.readonly',
         callback: () => {}
@@ -273,6 +350,17 @@
       if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
       appendLineComment(currentToken, payload.url, payload.diffId, payload.lineKey, payload.context || '', payload.name, payload.text)
         .then(entry => cb(null, entry))
+        .catch(err => cb(err));
+    };
+  }
+
+  if (cfg.allowSchemaEdits) {
+    window.SchemaApp = window.SchemaApp || {};
+    window.SchemaApp.onSaveSchema = function (payload, cb) {
+      if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
+      saveSchema(currentToken, currentTab, payload.page, payload.cur, payload.mode, payload.text)
+        .then(() => loadTab(currentTab))
+        .then(() => cb(null))
         .catch(err => cb(err));
     };
   }

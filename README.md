@@ -203,6 +203,22 @@ on the dashboard side for that.
 Until `enabled` is `true`, none of this loads and `data/schema-history.js` is used as
 before.
 
+### Editing a schema from the dashboard
+
+With `allowSchemaEdits: true` in `data/sheet-config.js`, **View code changes** gets an
+**Edit schema** button once the sheet is connected. It opens the current version's cell
+text for editing, with two ways to save:
+
+- **Save as new version** writes into today's dated column (`YYYYMMDD`), adding the
+  column if it isn't there yet. The diff then shows your edit as the latest change.
+- **Fix current version** overwrites the current version's cell, for typos and mistakes.
+  The old text is then only recoverable from Google Sheets' version history.
+
+JSON-LD has to parse before it can be saved. Before writing, the dashboard re-reads the
+page's row and refuses to save if the row has moved or the cell was changed since it
+loaded — reload the sheet and redo the edit. Only people with edit access to the
+spreadsheet can save; anyone else gets Google's permission error.
+
 ## Sample data
 
 `data/schema-history.js` ships with example content so the dashboard has something to

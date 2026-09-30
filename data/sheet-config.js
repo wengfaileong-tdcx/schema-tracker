@@ -64,6 +64,17 @@
    asks for from read-only to read+write, since posting a comment means
    writing to the sheet. Leave blank ("") to keep commenting off and
    stay read-only.
+
+   allowSchemaEdits (optional): adds an "Edit schema" button inside
+   "View code changes". The editor opens with the current version's cell
+   text and offers two ways to save:
+     "Save as new version"  — writes into today's dated column (YYYYMMDD),
+                              adding that column if it isn't there yet
+     "Fix current version"  — overwrites the current version's cell
+   Before writing, the dashboard re-reads the page's row and refuses to
+   save if the row has moved or the cell was changed since it loaded.
+   Only people with edit access to the spreadsheet can save; this also
+   needs the read+write Google permission, same as lineCommentsTab.
    ============================================================ */
 
 window.SHEET_CONFIG = {
@@ -72,5 +83,6 @@ window.SHEET_CONFIG = {
   spreadsheetId: "1ca7noantQV3pbxobG1ByidyN27O8DACAm0ehgys0JP4",
   range: "Sheet1",
   faqTab: "FAQ Live",
-  lineCommentsTab: "Line Comments"
+  lineCommentsTab: "Line Comments",
+  allowSchemaEdits: true
 };

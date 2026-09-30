@@ -239,6 +239,57 @@
       '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h8v8h-2V5.4L6.7 10.7 5.3 9.3 10.6 4H6V2z"/><path d="M2 4h3v2H4v6h6V9h2v5H2V4z"/></svg></a>'
     : '';
 
+  /* ---------- editing the current schema ---------- */
+
+  // Only offered on data that came from the sheet, since that's where an
+  // edit is written back to.
+  const canEdit = () => SOURCE === 'sheet' && !!(window.SchemaApp && window.SchemaApp.onSaveSchema);
+
+  const todayIso = () => {
+    const d = new Date(), p = n => (n < 10 ? '0' : '') + n;
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  };
+
+  function editPanel(cur) {
+    const sameDay = cur.date === todayIso();
+    return '<div class="sch-edit" hidden>' +
+      '<p class="hint">Editing the ' + esc(fmt(cur.date)) + ' version. Saving writes straight to the Google Sheet.</p>' +
+      '<textarea class="sch-text" spellcheck="false" aria-label="Schema markup"></textarea>' +
+      '<div class="controls sch-bar">' +
+      '<button class="primary sch-save" type="button" data-mode="new"' + (sameDay ? ' disabled' : '') + '>' +
+      'Save as new version (' + esc(fmt(todayIso())) + ')</button>' +
+      '<button class="sch-save" type="button" data-mode="fix">Fix current version (' + esc(fmt(cur.date)) + ')</button>' +
+      '<button class="mini sch-cancel" type="button">Cancel</button>' +
+      '<span class="count sch-msg" role="status">' +
+      (sameDay ? 'Today\'s version already exists, so only "Fix current version" is available.' : '') + '</span>' +
+      '</div></div>';
+  }
+
+  // Same rule the sheet loader applies: text that opens like markup has to
+  // parse, anything else is kept as plain text.
+  function checkEdit(cur, text) {
+    if (!text) return 'The schema can\'t be empty.';
+    if (text.length > 50000) return 'Google Sheets cells hold at most 50,000 characters.';
+    const markup = /^[[{]|^<script/i.test(text);
+    if (!isText(cur) && !markup) return 'This page\'s schema is JSON-LD, so it has to start with {, [ or <script.';
+    if (markup) {
+      const r = D.parse(text);
+      if (r.error) return 'Not valid JSON: ' + r.error;
+    }
+    return '';
+  }
+
+  // After a save the whole list re-renders from the sheet, so reopen the
+  // page that was edited and show its new diff.
+  function reopen(url) {
+    const details = document.querySelector('#list details.page[data-url="' + CSS.escape(url) + '"]');
+    if (!details) return;
+    details.open = true;
+    const fold = details.querySelector('details.fold[data-diff]');
+    if (fold) fold.open = true;
+    details.scrollIntoView({ block: 'start' });
+  }
+
   /* ---------- render one page row ---------- */
 
   function pageRow(page, index) {
@@ -275,7 +326,9 @@
         '<summary>View code changes</summary><div class="inner">' +
         '<div class="foldbar"><span class="count">' + esc(vs[1].version) + ' → ' + esc(cur.version) + '</span>' +
         '<span class="spacer"></span>' +
+        (canEdit() ? '<button class="mini edit-schema" type="button">Edit schema</button>' : '') +
         '<button class="mini toggle-full" type="button" data-full="0">Show full code</button></div>' +
+        (canEdit() ? editPanel(cur) : '') +
         '<div class="diffhost"></div></div></details>';
     } else {
       h += '<div class="flat">Only one version recorded, so there is nothing to compare yet.</div>';
@@ -551,6 +604,57 @@
       t.textContent = on ? 'Show changes only' : 'Show full code';
       renderDiffInto(fold.querySelector('.diffhost'), vs[1], vs[0], !!on,
         { diffId: DIFF_CODE, comments: commentsFor(page, DIFF_CODE), canPost: canComment() });
+      return;
+    }
+
+    /* open / close the schema editor */
+    if (t.classList.contains('edit-schema') || t.classList.contains('sch-cancel')) {
+      const fold = t.closest('.fold');
+      const panel = fold.querySelector('.sch-edit');
+      const opening = panel.hidden;
+      if (opening) {
+        const cur = ordered(pageByUrl(fold.dataset.diff))[0];
+        // The cell's own text, so a <script> wrapper or the original
+        // formatting survives an edit untouched.
+        panel.querySelector('.sch-text').value = cur.raw != null ? cur.raw : show(cur);
+      }
+      panel.hidden = !opening;
+      fold.querySelector('.edit-schema').textContent = opening ? 'Close editor' : 'Edit schema';
+      if (opening) panel.querySelector('.sch-text').focus();
+      return;
+    }
+
+    /* save an edited schema back to the sheet */
+    if (t.classList.contains('sch-save')) {
+      const fold = t.closest('.fold');
+      const panel = t.closest('.sch-edit');
+      const msg = panel.querySelector('.sch-msg');
+      const page = pageByUrl(fold.dataset.diff);
+      const cur = ordered(page)[0];
+      const text = panel.querySelector('.sch-text').value.trim();
+      const mode = t.dataset.mode;
+      const problem = checkEdit(cur, text);
+      if (problem) { msg.textContent = problem; return; }
+      if (text === (cur.raw != null ? cur.raw : show(cur).trim())) { msg.textContent = 'Nothing has changed yet.'; return; }
+      if (mode === 'fix' && !window.confirm('Overwrite the ' + fmt(cur.date) + ' version of ' + page.url +
+        ' in the sheet? Its current text will only be recoverable from Google Sheets\' version history.')) return;
+      const buttons = panel.querySelectorAll('button');
+      buttons.forEach(b => { b.disabled = true; });
+      msg.textContent = 'Saving to the sheet…';
+      window.SchemaApp.onSaveSchema({ page: page, cur: cur, mode: mode, text: text }, function (err) {
+        if (err) {
+          buttons.forEach(b => { b.disabled = false; });
+          if (cur.date === todayIso()) panel.querySelector('[data-mode="new"]').disabled = true;
+          msg.textContent = 'Could not save: ' + err.message;
+          return;
+        }
+        // Still on screen means the reload after saving didn't re-render.
+        if (document.body.contains(panel)) {
+          msg.textContent = 'Saved to the sheet, but reloading failed — see the status above, then Reconnect.';
+          return;
+        }
+        reopen(page.url);
+      });
       return;
     }
 
