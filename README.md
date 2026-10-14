@@ -219,6 +219,25 @@ page's row and refuses to save if the row has moved or the cell was changed sinc
 loaded — reload the sheet and redo the edit. Only people with edit access to the
 spreadsheet can save; anyone else gets Google's permission error.
 
+### Find & replace across pages
+
+The same setting adds a **Find & replace** button next to Expand all, for changing one
+value in every page's latest schema at once — a new website icon URL, say.
+
+1. **Find** the old value and type the new one. *Whole value only* (on by default)
+   matches values that are exactly that text, not ones that merely contain it.
+2. **Preview** lists every page it was found on, where it sits in the schema, and the
+   exact change. Untick any page to leave it alone. A match in a different field from
+   the other pages (an `image` rather than a `logo`) is flagged for a second look.
+3. **Confirm**, then save. Each page gets a new version dated today; one already
+   updated today has today's version updated instead.
+4. **Done** lists what was saved and what was skipped.
+
+Only JSON-LD is searched, not plain-text files like llms.txt. A page where the value is
+written differently in the sheet (with escaped slashes, say) is listed but left out —
+change it with **Edit schema**. A page changed in the sheet after you loaded it is
+skipped and named, never overwritten.
+
 ## Sample data
 
 `data/schema-history.js` ships with example content so the dashboard has something to

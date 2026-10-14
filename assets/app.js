@@ -836,6 +836,206 @@
     fold.querySelector('.sync-status').textContent = out.status;
   });
 
+  /* ---------- find & replace across pages ---------- */
+
+  // One value changed in every page's latest schema at once (a new icon URL,
+  // say). Four steps: find, preview with a tick box per page, confirm, done.
+  // Saving always writes a new dated version through the sheet loader.
+  const FR = { step: 1, find: '', repl: '', exact: true, plan: [], picked: {}, result: null, busy: false };
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+
+  // Every string value matching `find`, with a readable path to it, e.g.
+  // "Organization › logo › url".
+  function frHits(schema, find, exact) {
+    const out = [];
+    (function walk(v, path) {
+      if (typeof v === 'string') {
+        if (exact ? v === find : v.indexOf(find) > -1) out.push({ path: path, key: path.split(' › ').pop(), value: v });
+        return;
+      }
+      if (!v || typeof v !== 'object') return;
+      if (Array.isArray(v)) { v.forEach(x => walk(x, path)); return; }
+      const label = path || [].concat(v['@type'] || ['(top)'])[0];
+      Object.keys(v).forEach(k => {
+        if (k === '@graph') walk(v[k], path);
+        else if (k !== '@type' && k !== '@context') walk(v[k], label + ' › ' + k);
+      });
+    })(schema, '');
+    return out;
+  }
+
+  // The schema with every match replaced, used to check the edited cell text
+  // says exactly what the preview showed.
+  function frApply(v, find, repl, exact) {
+    if (typeof v === 'string') return exact ? (v === find ? repl : v) : v.split(find).join(repl);
+    if (!v || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(x => frApply(x, find, repl, exact));
+    const o = {};
+    Object.keys(v).forEach(k => { o[k] = (k === '@type' || k === '@context') ? v[k] : frApply(v[k], find, repl, exact); });
+    return o;
+  }
+
+  // The new cell text is the old one with the value swapped in place, so the
+  // cell's own formatting and any <script> wrapper survive. If that doesn't
+  // parse back to exactly the intended schema (an escaped "\/" in the URL, a
+  // match inside a key), the page is left out rather than guessed at.
+  function frPlanPage(page) {
+    const cur = ordered(page)[0];
+    if (!cur || isText(cur) || cur.raw == null) return null;
+    const hits = frHits(cur.schema, FR.find, FR.exact);
+    if (!hits.length) return null;
+    const q = s => JSON.stringify(s), inner = s => q(s).slice(1, -1);
+    const text = FR.exact ? cur.raw.split(q(FR.find)).join(q(FR.repl))
+      : cur.raw.split(inner(FR.find)).join(inner(FR.repl));
+    const parsed = D.parse(text);
+    const safe = !parsed.error &&
+      JSON.stringify(D.sortKeys(parsed.value)) === JSON.stringify(D.sortKeys(frApply(cur.schema, FR.find, FR.repl, FR.exact)));
+    return { page: page, cur: cur, hits: hits, text: text, safe: safe };
+  }
+
+  // Marks only the part of a value that changes, like the code diff does.
+  function frMarked(value, side) {
+    const find = FR.find, repl = FR.repl;
+    let a = 0; while (a < find.length && a < repl.length && find[a] === repl[a]) a++;
+    let b = 0; while (b < find.length - a && b < repl.length - a && find[find.length - 1 - b] === repl[repl.length - 1 - b]) b++;
+    const src = side === 'd' ? find : repl;
+    const mid = src.slice(a, src.length - b);
+    const one = esc(src.slice(0, a)) + (mid ? '<mark>' + esc(mid) + '</mark>' : '') + esc(src.slice(src.length - b));
+    return value.split(find).map(esc).join(one);
+  }
+
+  const frChosen = () => FR.plan.filter(x => x.safe && FR.picked[x.page.url]);
+  const frPlaces = () => frChosen().reduce((n, x) => n + x.hits.length, 0);
+
+  function frSteps() {
+    return '<div class="fr-steps">' + ['Find', 'Preview', 'Confirm', 'Done'].map((t, i) =>
+      '<div class="fr-step' + (i + 1 === FR.step ? ' on' : i + 1 < FR.step ? ' done' : '') + '"' +
+      (i + 1 === FR.step ? ' aria-current="step"' : '') + '><b>' + (i + 1) + '</b>' + t + '</div>').join('') + '</div>';
+  }
+
+  function frBody() {
+    const tab = (window.SchemaApp.sheetTab && window.SchemaApp.sheetTab()) || 'sheet';
+    if (FR.step === 1) {
+      return '<h2>Find &amp; replace across all pages</h2>' +
+        '<p class="hint">Change one value in every page’s latest schema at once, e.g. a new website icon URL. You’ll see every change before anything is saved.</p>' +
+        '<div class="fr-grid">' +
+        '<div><label for="fr-find">Find</label><input type="text" id="fr-find" class="fr-mono" spellcheck="false" value="' + esc(FR.find) + '"></div>' +
+        '<div><label for="fr-repl">Replace with</label><input type="text" id="fr-repl" class="fr-mono" spellcheck="false" value="' + esc(FR.repl) + '"></div>' +
+        '</div>' +
+        '<label class="fr-check"><input type="checkbox" id="fr-exact"' + (FR.exact ? ' checked' : '') + '>' +
+        '<span>Whole value only<small>Recommended. Matches a value that is exactly this text, not one that just contains it.</small></span></label>' +
+        '<div class="fr-bar"><span class="count fr-msg" role="status"></span><span class="spacer"></span>' +
+        '<button class="mini fr-close" type="button">Close</button>' +
+        '<button class="primary fr-preview" type="button">Preview changes</button></div>';
+    }
+    if (FR.step === 2) {
+      const safe = FR.plan.filter(x => x.safe), unsafe = FR.plan.filter(x => !x.safe);
+      // The field most matches sit in; a match not under it (an image
+      // rather than a logo, say) gets flagged for a second look.
+      // Counted per page, over every field on the way to a match, so a logo
+      // written as logo › url still counts as a logo.
+      const tally = {};
+      safe.forEach(x => {
+        const seen = {};
+        x.hits.forEach(h => h.path.split(' › ').slice(1).forEach(k => { seen[k] = 1; }));
+        Object.keys(seen).forEach(k => { tally[k] = (tally[k] || 0) + 1; });
+      });
+      const usual = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
+      const n = frChosen().length;
+      return '<h2>Preview</h2>' +
+        '<div class="fr-chips"><span class="fr-chip blue">' + n + ' of ' + plural(safe.length, 'page') + ' selected</span>' +
+        '<span class="fr-chip">' + plural(frPlaces(), 'place') + ' will change</span>' +
+        '<span class="fr-chip">Searched ' + plural(DATA.pages.length, 'page') + '</span></div>' +
+        '<p class="hint">Untick any page you don’t want changed. Each match shows where it sits in the schema.</p>' +
+        '<div class="fr-pages">' + safe.map(x =>
+          '<div class="fr-pg' + (FR.picked[x.page.url] ? '' : ' off') + '">' +
+          '<label class="fr-pg-head"><input type="checkbox" class="fr-pick" data-url="' + esc(x.page.url) + '"' +
+          (FR.picked[x.page.url] ? ' checked' : '') + '>' +
+          '<span class="fr-url">' + esc(x.page.url) + '</span>' +
+          '<span class="count">' + plural(x.hits.length, 'place') + '</span>' +
+          (x.hits.some(h => h.path.split(' › ').indexOf(usual) < 0) ? '<span class="fr-flag">Different field from the other pages, check this one</span>' : '') +
+          '</label>' +
+          x.hits.map(h => '<div class="fr-hit"><div class="fr-path">' + esc(h.path) + '</div><div class="fr-vals">' +
+            '<div class="fr-v d">' + frMarked(h.value, 'd') + '</div>' +
+            '<div class="fr-v a">' + frMarked(h.value, 'a') + '</div></div></div>').join('') +
+          '</div>').join('') + '</div>' +
+        (unsafe.length ? '<div class="fr-note warn"><b>' + plural(unsafe.length, 'page') + ' can’t be changed here</b> because the value is written differently in the sheet. Use <b>Edit schema</b> on: ' +
+          unsafe.map(x => esc(x.page.url)).join(', ') + '</div>' : '') +
+        '<div class="fr-note">' + plural(DATA.pages.length - FR.plan.length, 'page') + ' not affected.</div>' +
+        '<div class="fr-bar"><button class="mini fr-back" data-to="1" type="button">Back</button><span class="spacer"></span>' +
+        '<button class="primary fr-next" type="button"' + (n ? '' : ' disabled') + '>Continue with ' + plural(n, 'page') + '</button></div>';
+    }
+    if (FR.step === 3) {
+      const n = frChosen().length;
+      return '<h2>Confirm</h2>' +
+        '<div class="fr-confirm"><b>Update ' + plural(n, 'page') + ' (' + plural(frPlaces(), 'place') + ')?</b><ul>' +
+        '<li>Each page gets a <b>new version dated ' + esc(fmt(todayIso())) + '</b> in the <b>' + esc(tab) + '</b> tab. A page already updated today has today’s version updated instead.</li>' +
+        '<li>Older versions stay as they are, so this can be undone.</li>' +
+        '<li>The change shows up in each page’s <b>View code changes</b> for review.</li></ul></div>' +
+        '<div class="fr-bar"><button class="mini fr-back" data-to="2" type="button"' + (FR.busy ? ' disabled' : '') + '>Back to preview</button>' +
+        '<span class="count fr-msg" role="status">' + (FR.busy ? 'Saving to the sheet…' : '') + '</span><span class="spacer"></span>' +
+        '<button class="primary fr-save" type="button"' + (FR.busy ? ' disabled' : '') + '>Save ' + plural(n, 'page') + ' as new version</button></div>';
+    }
+    const r = FR.result;
+    return '<h2>Done</h2>' +
+      (r.saved.length ? '<div class="fr-res ok"><b>' + plural(r.saved.length, 'page') + ' saved as version ' +
+        esc(fmt(todayIso())) + '.</b><ul>' + r.saved.map(u => '<li>' + esc(u) + '</li>').join('') + '</ul></div>' : '') +
+      (r.skipped.length ? '<div class="fr-res skip"><b>' + plural(r.skipped.length, 'page') + ' skipped.</b> ' +
+        'Someone changed these in the sheet after you loaded it. Reconnect and run the replace again to include them.<ul>' +
+        r.skipped.map(s => '<li>' + esc(s.url) + '</li>').join('') + '</ul></div>' : '') +
+      '<div class="fr-bar"><button class="mini fr-back" data-to="1" type="button">Start a new replace</button><span class="spacer"></span>' +
+      '<button class="mini fr-close" type="button">Close</button>' +
+      (r.saved.length ? '<button class="primary fr-view" type="button" data-url="' + esc(r.saved[0]) + '">View changes on ' + esc(r.saved[0]) + '</button>' : '') +
+      '</div>';
+  }
+
+  function drawFr() {
+    $('fr').innerHTML = frSteps() + '<div class="fr-body">' + frBody() + '</div>';
+  }
+
+  $('fr-open').addEventListener('click', function () {
+    const panel = $('fr');
+    if (!panel.hidden) { panel.hidden = true; return; }
+    if (FR.step !== 3 || !FR.busy) FR.step = 1;
+    panel.hidden = false;
+    drawFr();
+    $('fr-find').focus();
+  });
+
+  $('fr').addEventListener('click', function (e) {
+    const t = e.target;
+    const msg = $('fr').querySelector('.fr-msg');
+    if (t.classList.contains('fr-close')) { $('fr').hidden = true; return; }
+    if (t.classList.contains('fr-back')) { FR.step = +t.dataset.to; drawFr(); return; }
+    if (t.classList.contains('fr-preview')) {
+      FR.find = $('fr-find').value.trim(); FR.repl = $('fr-repl').value.trim(); FR.exact = $('fr-exact').checked;
+      if (!FR.find || !FR.repl) { msg.textContent = 'Fill in both boxes.'; return; }
+      if (FR.find === FR.repl) { msg.textContent = 'The two values are the same.'; return; }
+      FR.plan = DATA.pages.map(frPlanPage).filter(Boolean);
+      if (!FR.plan.length) { msg.textContent = 'No page has this value in its latest schema.'; return; }
+      FR.picked = {};
+      FR.plan.forEach(x => { if (x.safe) FR.picked[x.page.url] = true; });
+      FR.step = 2; drawFr(); return;
+    }
+    if (t.classList.contains('fr-next')) { FR.step = 3; drawFr(); return; }
+    if (t.classList.contains('fr-save')) {
+      FR.busy = true; drawFr();
+      window.SchemaApp.onSaveMany(frChosen().map(x => ({ page: x.page, cur: x.cur, text: x.text })), function (err, result) {
+        FR.busy = false;
+        if (err) { drawFr(); $('fr').querySelector('.fr-msg').textContent = 'Could not save: ' + err.message; return; }
+        FR.result = result; FR.step = 4; drawFr();
+      });
+      return;
+    }
+    if (t.classList.contains('fr-view')) { reopen(t.dataset.url); }
+  });
+
+  $('fr').addEventListener('change', function (e) {
+    if (!e.target.classList.contains('fr-pick')) return;
+    FR.picked[e.target.dataset.url] = e.target.checked;
+    drawFr();
+  });
+
   /* ---------- boot ---------- */
 
   $('q').addEventListener('input', draw);
@@ -937,6 +1137,8 @@
     drawRecent();
     draw();
     drawTools();
+    $('fr-open').hidden = !(canEdit() && window.SchemaApp.onSaveMany);
+    if ($('fr-open').hidden) $('fr').hidden = true;
   }
 
   // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data

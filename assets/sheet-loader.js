@@ -282,6 +282,45 @@
       }));
   }
 
+  // Find & replace: saves several pages at once as today's version, in one
+  // write. Every page gets the same check as a single edit; one that fails it
+  // is skipped and reported, and the rest are still saved. A page whose
+  // latest version is already today's has that cell updated, so running a
+  // second replace on the same day doesn't skip everything the first touched.
+  function saveMany(token, tab, items) {
+    const ranges = [a1(tab, '1:1')].concat(items.map(it => a1(tab, it.page.sheetRow + ':' + it.page.sheetRow)));
+    return api(token, '/values:batchGet?' + ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&'))
+      .then(res => {
+        const head = ((res.valueRanges[0].values || [])[0] || []).map(x => String(x || '').trim());
+        const stamp = todayStamp();
+        const hasCol = head.indexOf(stamp) > -1;
+        const col = hasCol ? head.indexOf(stamp) : head.length;
+        const writes = [], saved = [], skipped = [];
+        items.forEach((it, i) => {
+          const row = (res.valueRanges[i + 1].values || [])[0] || [];
+          const p = it.page, cur = it.cur;
+          const unchanged = String(row[p.urlCol] || '').trim() === p.url &&
+            head[cur.col] === cur.version.replace(/-/g, '') &&
+            String(row[cur.col] || '').trim() === cur.raw;
+          if (!unchanged || (cur.col !== col && String(row[col] || '').trim())) {
+            skipped.push({ url: p.url, reason: 'Changed in the sheet after you loaded it.' });
+            return;
+          }
+          writes.push({ range: a1(tab, colLetter(col) + p.sheetRow), values: [[it.text]] });
+          saved.push(p.url);
+        });
+        if (!writes.length) return { saved: saved, skipped: skipped, stamp: stamp };
+        if (!hasCol) writes.unshift({ range: a1(tab, colLetter(col) + '1'), values: [[stamp]] });
+        return ensureColumns(token, tab, col + 1)
+          .then(() => api(token, '/values:batchUpdate', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ valueInputOption: 'RAW', data: writes })
+          }))
+          .then(() => ({ saved: saved, skipped: skipped, stamp: stamp }));
+      });
+  }
+
   // Writing past the tab's last column fails, so widen it first if needed.
   function ensureColumns(token, tab, needed) {
     return api(token, '?fields=sheets.properties(title,sheetId,gridProperties.columnCount)')
@@ -405,6 +444,13 @@
         .then(() => cb(null))
         .catch(err => cb(err));
     };
+    window.SchemaApp.onSaveMany = function (items, cb) {
+      if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
+      saveMany(currentToken, currentTab, items)
+        .then(result => Promise.resolve(result.saved.length ? loadTab(currentTab) : null).then(() => cb(null, result)))
+        .catch(err => cb(err));
+    };
+    window.SchemaApp.sheetTab = () => currentTab;
   }
 
   bar.addEventListener('click', e => { if (e.target.id === 'sheet-connect') connect(); });
