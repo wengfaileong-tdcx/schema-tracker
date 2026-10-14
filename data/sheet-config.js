@@ -47,6 +47,13 @@
                              url / inLanguage
    Leave faqTab blank to skip both entirely.
 
+   proposedTab (optional): the tab whose newest version is the "Proposed"
+   side of both sync checks, whichever tab is being viewed. For each URL
+   it takes the newest dated cell that has content. URLs are matched
+   ignoring a trailing slash, a #fragment and the host's letter case.
+   Leave blank ("") to compare against the latest version of the tab on
+   screen instead.
+
    lineCommentsTab (optional): turns on commenting directly on a changed
    line inside "View code changes" or "FAQ sync check" — a 💬 button
    appears next to each changed line. Comments are saved as new rows in
@@ -83,6 +90,7 @@ window.SHEET_CONFIG = {
   spreadsheetId: "1ca7noantQV3pbxobG1ByidyN27O8DACAm0ehgys0JP4",
   range: "Sheet1",
   faqTab: "FAQ Live",
+  proposedTab: "LLMSource schema",
   lineCommentsTab: "Line Comments",
   allowSchemaEdits: true
 };

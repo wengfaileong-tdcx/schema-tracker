@@ -60,15 +60,24 @@
 
   /* ---------- FAQ sync check (tracked FAQPage schema vs. live page) ---------- */
 
-  // Finds an FAQPage node anywhere in a schema value, including inside @graph.
-  function findFaqPage(schema) {
-    if (!schema || typeof schema !== 'object') return null;
-    const nodes = Array.isArray(schema) ? schema : schema['@graph'] ? schema['@graph'] : [schema];
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (n && [].concat(n['@type'] || []).indexOf('FAQPage') > -1) return n;
+  // Every typed node in a schema value, shallowest first: across several
+  // <script> blocks, inside each block's @graph, and nested under other nodes
+  // (an FAQPage hanging off a WebPage's mainEntity, say).
+  function schemaNodes(schema) {
+    const out = [], queue = [schema];
+    while (queue.length) {
+      const v = queue.shift();
+      if (!v || typeof v !== 'object') continue;
+      if (Array.isArray(v)) { queue.push.apply(queue, v); continue; }
+      if (v['@type']) out.push(v);
+      Object.keys(v).forEach(k => { if (v[k] && typeof v[k] === 'object') queue.push(v[k]); });
     }
-    return null;
+    return out;
+  }
+  const typesOf = n => [].concat(n['@type'] || []);
+
+  function findFaqPage(schema) {
+    return schemaNodes(schema).filter(n => typesOf(n).indexOf('FAQPage') > -1)[0] || null;
   }
 
   const trackedFaqPairs = faqPage => (faqPage.mainEntity || []).map(q => ({
@@ -80,15 +89,9 @@
 
   // The node describing the page itself. Prefers WebPage, else any *Page.
   function findWebPage(schema) {
-    if (!schema || typeof schema !== 'object') return null;
-    const nodes = Array.isArray(schema) ? schema : schema['@graph'] ? schema['@graph'] : [schema];
-    let fallback = null;
-    for (let i = 0; i < nodes.length; i++) {
-      const types = [].concat((nodes[i] && nodes[i]['@type']) || []);
-      if (types.indexOf('WebPage') > -1) return nodes[i];
-      if (!fallback && types.some(t => /Page$/.test(t))) fallback = nodes[i];
-    }
-    return fallback;
+    const nodes = schemaNodes(schema);
+    return nodes.filter(n => typesOf(n).indexOf('WebPage') > -1)[0] ||
+      nodes.filter(n => typesOf(n).some(t => /Page$/.test(t)))[0] || null;
   }
 
   // Both sides are reduced to the same four fields so the diff reads as a
@@ -109,7 +112,7 @@
     {
       key: 'faq',
       title: 'FAQ sync check with live site',
-      hint: 'What is published on the page (left) vs. the proposed FAQPage schema from Google Sheet (right).',
+      hint: 'What is published on the page (left) vs. the FAQPage in the proposed schema (right).',
       diffIds: { live: DIFF_FAQ, staging: DIFF_FAQ_STAGING },
       live: (page, which) => which === 'live' ? page.liveFaq : page.stagingFaq,
       fromSchema: schema => { const f = findFaqPage(schema); return f ? trackedFaqPairs(f) : null; },
@@ -118,7 +121,7 @@
     {
       key: 'meta',
       title: 'Metadata sync check with live site',
-      hint: 'The page’s own title, meta description, canonical and lang (left) vs. what the proposed schema says they should be (right).',
+      hint: 'The page’s own title, meta description, canonical and lang (left) vs. what the WebPage in the proposed schema says they should be (right).',
       diffIds: { live: DIFF_META, staging: DIFF_META_STAGING },
       live: (page, which) => metaFromLive(which === 'live' ? page.liveMeta : page.stagingMeta),
       fromSchema: metaFromSchema,
@@ -149,10 +152,31 @@
     };
   }
 
+  // What the live page is checked against. With proposedTab set, that is
+  // always the newest version in that tab (attached by the sheet loader),
+  // never just whichever tab happens to be on screen.
+  function proposedFor(page) {
+    if (page.proposed) return page.proposed;
+    if (page.proposedMissing) return null;
+    const cur = ordered(page)[0];
+    return { schema: cur.schema, date: cur.date, tab: '' };
+  }
+  const proposedNote = p => '<p class="hint">Proposed = latest version in ' +
+    (p.tab ? 'the <b>' + esc(p.tab) + '</b> tab' : 'this tab') + ', dated <b>' + esc(fmt(p.date)) + '</b>.</p>';
+
   function syncBlock(spec, page, cur) {
+    const prop = proposedFor(page);
+    if (!prop) {
+      // Only worth flagging where the page does declare the thing checked.
+      if (!spec.fromSchema(cur.schema)) return '';
+      return '<div class="block"><details class="fold sync-check sync-todo">' +
+        '<summary>' + esc(spec.title) + '<span class="count"> · no proposed schema</span></summary>' +
+        '<div class="inner"><p class="hint">' + esc(page.proposedMissing) + '</p></div></details></div>';
+    }
+
     // Nothing declared in the schema means there is genuinely nothing to
     // check here, so stay quiet.
-    const proposed = spec.fromSchema(cur.schema);
+    const proposed = spec.fromSchema(prop.schema);
     if (!proposed) return '';
 
     // Declared but with nothing to compare against is a gap in the sheet, not
@@ -186,7 +210,7 @@
       '<summary>' + esc(spec.title) + '<span class="count"> · <span class="sync-status">' +
       first.status + '</span></span></summary>' +
       '<div class="inner">' +
-      '<p class="hint">' + spec.hint + '</p>' +
+      '<p class="hint">' + spec.hint + '</p>' + proposedNote(prop) +
       picker + '<div class="synchost">' + first.html + '</div>' +
       '</div></details></div>';
   }
@@ -803,7 +827,8 @@
     const spec = syncByKey(fold.dataset.sync);
     const page = pageByUrl(fold.dataset.url);
     if (!spec || !page) return;
-    const proposed = spec.fromSchema(ordered(page)[0].schema);
+    const prop = proposedFor(page);
+    const proposed = prop && spec.fromSchema(prop.schema);
     const source = syncSources(spec, page).filter(s => s.id === e.target.value)[0];
     if (!proposed || !source) return;
     const out = syncCompare(spec, page, proposed, source);

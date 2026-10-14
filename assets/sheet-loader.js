@@ -98,6 +98,12 @@
     return { site: cfg.site || '', pages: pages, warnings: badCells };
   }
 
+  // Different tabs write the same page slightly differently — a trailing
+  // slash, a #fragment, upper-case host — so match rows across tabs on a
+  // normalised form rather than the exact text.
+  const sameUrl = u => String(u || '').trim().replace(/#.*$/, '')
+    .replace(/^(https?:\/\/[^/]+)/i, m => m.toLowerCase()).replace(/\/+$/, '') || '/';
+
   function api(token, path, opts) {
     return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.spreadsheetId + path, Object.assign({
       headers: { Authorization: 'Bearer ' + token }
@@ -147,10 +153,10 @@
       if (!url) return;
       const found = {};
       Object.keys(idx).forEach(k => { if (idx[k] > -1) found[k] = parseCell(r[idx[k]]); });
-      byUrl[url] = found;
+      byUrl[sameUrl(url)] = found;
     });
     data.pages.forEach(p => {
-      const found = byUrl[p.url];
+      const found = byUrl[sameUrl(p.url)];
       if (!found) return;
       Object.keys(found).forEach(k => { if (found[k]) p[k] = found[k]; });
     });
@@ -291,6 +297,38 @@
       });
   }
 
+  // proposedTab: the sync checks always compare the live page against the
+  // newest version recorded in this tab, whichever tab is being viewed. Each
+  // page gets page.proposed = { schema, date, tab }, or proposedMissing with
+  // the reason when that tab has nothing usable for it.
+  const fetchProposed = (token, viewedTab, viewedRows) => {
+    if (!cfg.proposedTab) return Promise.resolve(null);
+    if (cfg.proposedTab === viewedTab) return Promise.resolve({ values: viewedRows });
+    return fetchValues(token, cfg.proposedTab);
+  };
+
+  function attachProposed(data, proposedRes, proposedErr) {
+    if (!cfg.proposedTab) return data;
+    const tab = cfg.proposedTab;
+    let byUrl = null, why = '';
+    if (proposedErr) why = 'The "' + tab + '" tab could not be read: ' + proposedErr.message;
+    else {
+      try {
+        byUrl = {};
+        rowsToData(proposedRes.values || []).pages.forEach(p => {
+          const latest = p.versions.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+          byUrl[sameUrl(p.url)] = { schema: latest.schema, date: latest.date, tab: tab };
+        });
+      } catch (e) { byUrl = null; why = 'The "' + tab + '" tab could not be read: ' + e.message; }
+    }
+    data.pages.forEach(p => {
+      const hit = byUrl && byUrl[sameUrl(p.url)];
+      if (hit) p.proposed = hit;
+      else p.proposedMissing = why || 'This URL has no schema in the "' + tab + '" tab.';
+    });
+    return data;
+  }
+
   let tokenClient = null;
   let currentToken = null;
   let currentTab = null;
@@ -299,8 +337,12 @@
     currentTab = tab;
     setStatus('Loading ' + tab + '…');
     return Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken)])
-      .then(([data, faqData, lineCommentsData]) => {
-        const result = attachLineComments(attachLivePage(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []);
+      .then(([data, faqData, lineCommentsData]) => fetchProposed(currentToken, tab, data.values || [])
+        .then(p => [data, faqData, lineCommentsData, p, null], e => [data, faqData, lineCommentsData, null, e]))
+      .then(([data, faqData, lineCommentsData, proposedData, proposedErr]) => {
+        const result = attachProposed(
+          attachLineComments(attachLivePage(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []),
+          proposedData, proposedErr);
         window.SchemaApp.setData(result, 'sheet');
         $('sheet-connect').textContent = 'Reconnect';
         report('ok', 'Google Sheet connected',
