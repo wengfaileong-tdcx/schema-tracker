@@ -171,7 +171,7 @@
 
   // "Line Comments" tab layout: URL | DiffId | LineKey | Context | Name |
   // Comment | Timestamp | Resolved. DiffId names which section the comment
-  // is on ("View code changes" / "FAQ sync check"); LineKey is the JSON
+  // is on ("View code changes" / "View current schema" / "FAQ sync check"); LineKey is the JSON
   // property it's anchored to; Context is the exact text it refers to —
   // the highlighted selection, or the line's before/after — read back so
   // the dashboard can show what was flagged. Resolved is optional and

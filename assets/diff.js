@@ -350,6 +350,27 @@ window.SchemaDiff = (function () {
       '</div>';
   }
 
+  /* One schema on its own, line by line, with the same comment column as a
+     diff — for "View current schema". Lines are keyed the same way, so a
+     comment stays on its property when the text around it moves. */
+  function singleView(text, commentOpts) {
+    const co = commentOpts || null;
+    const d = String(text || '').split('\n').map((s, i) => ({ t: '=', s: s, w: i + 1 }));
+    const keys = co ? lineKeys(d) : null;
+    let h = '<div class="diff single">';
+    d.forEach(x => {
+      let cm = '', panel = '';
+      if (co) {
+        const key = keys.get(x), list = co.comments[key];
+        const open = list ? list.filter(c => !c.resolved).length : 0;
+        cm = '<span class="cmcell">' + commentButton(co.diffId, key, open, list && list.length) + '</span>';
+        if (list && list.length) panel = commentPanel(co.diffId, key, list, co.canPost);
+      }
+      h += '<div class="row">' + cell(x.s, x.w, '') + cm + '</div>' + panel;
+    });
+    return h + '</div>';
+  }
+
   /* d: output of lines(). full: show every unchanged line. context: lines kept either side.
      labels: optional {left, right} column headings, default Previous/Current.
      commentOpts: optional {diffId, comments: {lineKey: [{name,text,ts}]}, canPost} —
@@ -460,7 +481,7 @@ window.SchemaDiff = (function () {
   return {
     extract: extract, sortKeys: sortKeys, parse: parse, pretty: pretty,
     toLines: toLines, lines: lines, summarise: summarise, summariseText: summariseText,
-    splitView: splitView, compare: compare, esc: esc,
+    splitView: splitView, singleView: singleView, compare: compare, esc: esc,
     commentPanel: commentPanel, commentItem: commentItem
   };
 })();

@@ -10,6 +10,7 @@
   // Written verbatim into the "DiffId" column when a line comment is posted,
   // so the raw sheet row is readable without opening the dashboard.
   const DIFF_CODE = 'View code changes';
+  const DIFF_SCHEMA = 'View current schema';
   const DIFF_FAQ = 'FAQ sync check';
   const DIFF_FAQ_STAGING = 'FAQ sync check (staging)';
   const DIFF_META = 'Metadata sync check';
@@ -370,7 +371,7 @@
       '<div class="foldbar"><span class="count">' + esc(cur.version) + ' · live now</span>' +
       '<span class="spacer"></span>' +
       '<button class="mini copy-schema" type="button">Copy schema</button></div>' +
-      '<pre class="code">' + esc(show(cur)) + '</pre>' +
+      '<div class="schemahost"></div>' +
       '</div></details></div>';
 
     /* 3. compare any two versions */
@@ -613,6 +614,16 @@
         host.dataset.done = '1';
       }
     }
+
+    if (d.dataset.schema) {
+      const host = d.querySelector('.schemahost');
+      if (host && !host.dataset.done) {
+        const page = pageByUrl(d.dataset.schema);
+        host.innerHTML = D.singleView(show(ordered(page)[0]),
+          { diffId: DIFF_SCHEMA, comments: commentsFor(page, DIFF_SCHEMA), canPost: canComment() });
+        host.dataset.done = '1';
+      }
+    }
   }, true);
 
   document.addEventListener('click', function (e) {
@@ -684,24 +695,13 @@
 
     /* copy current schema */
     if (t.classList.contains('copy-schema')) {
-      const pre = t.closest('.inner').querySelector('pre.code');
-      const done = ok => {
+      // Copied from the data, not the screen, so line numbers and comment
+      // buttons don't come along.
+      const cur = ordered(pageByUrl(t.closest('.fold').dataset.schema))[0];
+      copyToClipboard(show(cur)).then(ok => {
         t.textContent = ok ? 'Copied' : 'Press Ctrl+C';
         setTimeout(() => { t.textContent = 'Copy schema'; }, 1600);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(pre.textContent).then(() => done(true), () => fallback());
-      } else fallback();
-      function fallback() {
-        // file:// in some browsers has no async clipboard; select the text instead.
-        const r = document.createRange();
-        r.selectNodeContents(pre);
-        const s = window.getSelection();
-        s.removeAllRanges(); s.addRange(r);
-        let ok = false;
-        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-        done(ok);
-      }
+      });
       return;
     }
 
