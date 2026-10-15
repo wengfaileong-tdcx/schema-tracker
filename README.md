@@ -238,6 +238,18 @@ written differently in the sheet (with escaped slashes, say) is listed but left 
 change it with **Edit schema**. A page changed in the sheet after you loaded it is
 skipped and named, never overwritten.
 
+### Writing schema for new pages with AI
+
+**Copy latest schemas** (next to Find & replace, once the sheet is connected) copies every
+page's newest schema, with its URL and version date, as plain text. A page left blank in
+the newest column is copied from its newest filled version, so dates can differ.
+
+To have Claude Code write schema for new URLs, run `/new-schema`, paste the copied text,
+and list the new URLs. The skill (in `.claude/skills/new-schema/`) reuses the shared
+Organization/WebSite/logo nodes as they are and takes everything else from the new page
+itself. Anything it can't find on the page is left out and listed for a person to check.
+It never writes to the sheet: add each new URL as a row with the schema in today's column.
+
 ## Sample data
 
 `data/schema-history.js` ships with example content so the dashboard has something to

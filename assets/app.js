@@ -836,6 +836,59 @@
     fold.querySelector('.sync-status').textContent = out.status;
   });
 
+  /* ---------- copy latest schemas ---------- */
+
+  // Every page's newest filled version as one block of text, e.g. to give an
+  // AI agent as the reference for writing schema for new pages. Each page
+  // carries its own date, since a page left blank in the newest column is
+  // represented by an older one. Plain-text files (llms.txt) are left out.
+  function latestSchemasText() {
+    const tab = (window.SchemaApp.sheetTab && window.SchemaApp.sheetTab()) || '';
+    const rows = DATA.pages.map(p => ({ page: p, cur: ordered(p)[0] }))
+      .filter(r => r.cur && !isText(r.cur));
+    return 'Latest schema for each page' + (tab ? ' in the "' + tab + '" tab' : '') +
+      ', copied ' + fmt(todayIso()) + '. ' + plural(rows.length, 'page') + '.\n' +
+      'Each page shows its newest filled version, so dates can differ between pages.\n\n' +
+      rows.map(r => '=== ' + r.page.url + (r.page.title ? ' · ' + r.page.title : '') +
+        ' · version ' + r.cur.date + ' ===\n' +
+        (r.cur.raw != null ? r.cur.raw : show(r.cur))).join('\n\n') + '\n';
+  }
+
+  let toastTimer = null;
+  function toast(text) {
+    const el = $('toast');
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+  }
+
+  // Clipboard API first; where that's refused, the older copy command.
+  function copyToClipboard(text) {
+    const fallback = () => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      return ok;
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(() => true, () => fallback());
+    }
+    return Promise.resolve(fallback());
+  }
+
+  $('copy-latest').addEventListener('click', function () {
+    copyToClipboard(latestSchemasText()).then(ok => {
+      toast(ok ? 'Copied to clipboard' : 'Couldn’t copy. Your browser blocked it.');
+    });
+  });
+
   /* ---------- find & replace across pages ---------- */
 
   // One value changed in every page's latest schema at once (a new icon URL,
@@ -1137,6 +1190,7 @@
     drawRecent();
     draw();
     drawTools();
+    $('copy-latest').hidden = SOURCE !== 'sheet';
     $('fr-open').hidden = !(canEdit() && window.SchemaApp.onSaveMany);
     if ($('fr-open').hidden) $('fr').hidden = true;
   }

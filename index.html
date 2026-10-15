@@ -49,6 +49,7 @@
     </div>
     <div><button id="expand" type="button">Expand all</button></div>
     <div><button id="fr-open" class="btn-ghost" type="button" hidden>Find &amp; replace</button></div>
+    <div><button id="copy-latest" class="btn-ghost" type="button" hidden>Copy latest schemas</button></div>
     <span class="count" id="count"></span>
   </div>
 
@@ -64,6 +65,8 @@
   </footer>
 
 </div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <button id="totop" class="totop noprint" type="button" hidden
         aria-label="Back to top of the dashboard" title="Back to top">

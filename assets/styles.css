@@ -87,6 +87,11 @@ button.mini{font-size:12.5px;padding:5px 10px}
 .totop-a{width:8px;height:8px;border-left:1.9px solid var(--focus);border-top:1.9px solid var(--focus);
   transform:rotate(45deg);position:relative;top:2px}
 @media(max-width:560px){.totop{right:14px;bottom:14px}}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:30;
+  transform:translate(-50%,8px);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;
+  font-size:13.5px;box-shadow:0 3px 10px rgba(16,24,40,.18);opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* chevrons */
 .chev{width:7px;height:7px;border-right:1.8px solid #98a2b3;border-bottom:1.8px solid #98a2b3;
