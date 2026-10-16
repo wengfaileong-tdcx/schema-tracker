@@ -205,8 +205,8 @@ before.
 
 ### Editing a schema from the dashboard
 
-With `allowSchemaEdits: true` in `data/sheet-config.js`, **View code changes** gets an
-**Edit schema** button once the sheet is connected. It opens the current version's cell
+With `allowSchemaEdits: true` in `data/sheet-config.js`, **View code changes** and
+**View current schema** get an **Edit schema** button once the sheet is connected. It opens the current version's cell
 text for editing, with two ways to save:
 
 - **Save as new version** writes into today's dated column (`YYYYMMDD`), adding the

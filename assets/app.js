@@ -306,11 +306,12 @@
 
   // After a save the whole list re-renders from the sheet, so reopen the
   // page that was edited and show its new diff.
-  function reopen(url) {
+  // section: 'schema' reopens View current schema, otherwise View code changes.
+  function reopen(url, section) {
     const details = document.querySelector('#list details.page[data-url="' + CSS.escape(url) + '"]');
     if (!details) return;
     details.open = true;
-    const fold = details.querySelector('details.fold[data-diff]');
+    const fold = details.querySelector(section === 'schema' ? 'details.fold[data-schema]' : 'details.fold[data-diff]');
     if (fold) fold.open = true;
     details.scrollIntoView({ block: 'start' });
   }
@@ -370,7 +371,9 @@
       '<summary>View current schema</summary><div class="inner">' +
       '<div class="foldbar"><span class="count">' + esc(cur.version) + ' · live now</span>' +
       '<span class="spacer"></span>' +
+      (canEdit() ? '<button class="mini edit-schema" type="button">Edit schema</button>' : '') +
       '<button class="mini copy-schema" type="button">Copy schema</button></div>' +
+      (canEdit() ? editPanel(cur) : '') +
       '<div class="schemahost"></div>' +
       '</div></details></div>';
 
@@ -561,6 +564,8 @@
   /* ---------- lazy diff rendering ---------- */
 
   const pageByUrl = u => DATA.pages.filter(p => p.url === u)[0];
+  // The schema editor sits in both View code changes and View current schema.
+  const foldUrl = fold => fold.dataset.diff || fold.dataset.schema;
 
   const canComment = () => !!(window.SchemaApp && window.SchemaApp.onPostComment);
   const commentsFor = (page, diffId) => (page.lineComments && page.lineComments[diffId]) || {};
@@ -648,7 +653,7 @@
       const panel = fold.querySelector('.sch-edit');
       const opening = panel.hidden;
       if (opening) {
-        const cur = ordered(pageByUrl(fold.dataset.diff))[0];
+        const cur = ordered(pageByUrl(foldUrl(fold)))[0];
         // The cell's own text, so a <script> wrapper or the original
         // formatting survives an edit untouched.
         panel.querySelector('.sch-text').value = cur.raw != null ? cur.raw : show(cur);
@@ -664,7 +669,7 @@
       const fold = t.closest('.fold');
       const panel = t.closest('.sch-edit');
       const msg = panel.querySelector('.sch-msg');
-      const page = pageByUrl(fold.dataset.diff);
+      const page = pageByUrl(foldUrl(fold));
       const cur = ordered(page)[0];
       const text = panel.querySelector('.sch-text').value.trim();
       const mode = t.dataset.mode;
@@ -688,7 +693,7 @@
           msg.textContent = 'Saved to the sheet, but reloading failed — see the status above, then Reconnect.';
           return;
         }
-        reopen(page.url);
+        reopen(page.url, fold.dataset.schema ? 'schema' : 'diff');
       });
       return;
     }

@@ -74,7 +74,7 @@
    stay read-only.
 
    allowSchemaEdits (optional): adds an "Edit schema" button inside
-   "View code changes". The editor opens with the current version's cell
+   "View code changes" and "View current schema". The editor opens with the current version's cell
    text and offers two ways to save:
      "Save as new version"  — writes into today's dated column (YYYYMMDD),
                               adding that column if it isn't there yet
