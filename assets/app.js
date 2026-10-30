@@ -427,6 +427,45 @@
     }
   });
 
+  /* ---------- "Edit this line" from a line's 💬 panel ---------- */
+
+  // The line a comment row stands for in the current version, as an index
+  // into that version's lines in the layout on screen, or -1 if the row has
+  // no current-version line (a removed line) or isn't in an editable section.
+  // View code changes shows properties A–Z; View current schema as written.
+  function editableLine(row, diffId) {
+    if (!canEdit() || (diffId !== DIFF_CODE && diffId !== DIFF_SCHEMA)) return null;
+    const host = row.closest('.schemahost');
+    if (host && host.classList.contains('editing')) return null; // already editing every line
+    const cells = row.querySelectorAll('.cell');
+    const cell = diffId === DIFF_CODE ? cells[1] : cells[0];
+    if (!cell || cell.classList.contains('void')) return null;
+    const n = +cell.querySelector('.no').textContent;
+    return n ? n - 1 : null;
+  }
+
+  function currentLines(cur, diffId) {
+    return diffId === DIFF_CODE
+      ? D.toLines(cur.schema, true, isText(cur)).lines
+      : show(cur).split('\n');
+  }
+
+  function lineEditBlock(cur) {
+    const sameDay = cur.date === todayIso();
+    return '<div class="ln-mode" role="group" aria-label="Comment or edit">' +
+      '<button type="button" class="mini ln-mode-btn on" data-mode="comment">Comment</button>' +
+      '<button type="button" class="mini ln-mode-btn" data-mode="edit">Edit this line</button></div>' +
+      '<div class="ln-edit" hidden>' +
+      '<input type="text" class="ln-edit-text" spellcheck="false" aria-label="Line text">' +
+      '<div class="foldbar">' +
+      '<button class="primary mini ln-save" type="button" data-mode="new"' + (sameDay ? ' disabled' : '') + '>' +
+      'Save as new version (' + esc(fmt(todayIso())) + ')</button>' +
+      '<button class="mini ln-save" type="button" data-mode="fix">Fix current version (' + esc(fmt(cur.date)) + ')</button>' +
+      '<span class="count ln-edit-msg" role="status">' +
+      (sameDay ? 'Today\'s version already exists, so only "Fix current version" is available.' : '') + '</span>' +
+      '</div></div>';
+  }
+
   // section: 'schema' reopens View current schema, otherwise View code changes.
   function reopen(url, section) {
     const details = document.querySelector('#list details.page[data-url="' + CSS.escape(url) + '"]');
@@ -855,6 +894,14 @@
         panel = row.nextElementSibling;
       }
       panel.hidden = !panel.hidden;
+      const lineIdx = editableLine(row, lnBtn.dataset.diffId);
+      if (!panel.hidden && lineIdx != null && !panel.querySelector('.ln-mode')) {
+        const cur = ordered(pageByUrl(row.closest('.page').dataset.url))[0];
+        panel.insertAdjacentHTML('afterbegin', lineEditBlock(cur));
+        panel.querySelector('.cm-list').insertAdjacentElement('afterend', panel.querySelector('.ln-edit'));
+        panel.dataset.lineIdx = lineIdx;
+        panel.querySelector('.ln-edit-text').value = currentLines(cur, lnBtn.dataset.diffId)[lineIdx] || '';
+      }
       const quote = panel.querySelector('.ln-cm-quote');
       if (quote) {
         // Whatever is posted records the line it refers to, but only an
@@ -872,6 +919,54 @@
         const body = panel.querySelector('.cm-body');
         if (body) body.focus();
       }
+      return;
+    }
+
+    /* switch a 💬 panel between commenting and editing the line */
+    if (t.classList.contains('ln-mode-btn')) {
+      const panel = t.closest('.ln-cm-panel');
+      const editing = t.dataset.mode === 'edit';
+      panel.querySelectorAll('.ln-mode-btn').forEach(b => b.classList.toggle('on', b === t));
+      panel.querySelector('.ln-edit').hidden = !editing;
+      const form = panel.querySelector('.cm-form') || panel.querySelector('.flat');
+      if (form) form.hidden = editing;
+      (editing ? panel.querySelector('.ln-edit-text') : panel.querySelector('.cm-body') || t).focus();
+      return;
+    }
+
+    /* save one edited line as the whole schema */
+    if (t.classList.contains('ln-save')) {
+      const panel = t.closest('.ln-cm-panel');
+      const msg = panel.querySelector('.ln-edit-msg');
+      const fold = t.closest('.fold');
+      const page = pageByUrl(t.closest('.page').dataset.url);
+      const cur = ordered(page)[0];
+      const diffId = panel.dataset.diffId, idx = +panel.dataset.lineIdx, mode = t.dataset.mode;
+      const lines = currentLines(cur, diffId);
+      const next = panel.querySelector('.ln-edit-text').value;
+      if (next === lines[idx]) { msg.textContent = 'Nothing has changed yet.'; return; }
+      lines[idx] = next;
+      const text = cellFromLines(cur, lines.join('\n'));
+      const problem = checkEdit(cur, text);
+      if (problem) { msg.textContent = problem; return; }
+      if (mode === 'fix' && !window.confirm('Overwrite the ' + fmt(cur.date) + ' version of ' + page.url +
+        ' in the sheet? Its current text will only be recoverable from Google Sheets\' version history.')) return;
+      const buttons = panel.querySelectorAll('.ln-save');
+      buttons.forEach(b => { b.disabled = true; });
+      msg.textContent = 'Saving to the sheet…';
+      window.SchemaApp.onSaveSchema({ page: page, cur: cur, mode: mode, text: text }, function (err) {
+        if (err) {
+          buttons.forEach(b => { b.disabled = false; });
+          if (cur.date === todayIso()) panel.querySelector('.ln-save[data-mode="new"]').disabled = true;
+          msg.textContent = 'Could not save: ' + err.message;
+          return;
+        }
+        if (document.body.contains(panel)) {
+          msg.textContent = 'Saved to the sheet, but reloading failed — see the status above, then Reconnect.';
+          return;
+        }
+        reopen(page.url, fold.dataset.schema ? 'schema' : 'diff');
+      });
       return;
     }
 

@@ -228,6 +228,12 @@ ul.chg li.nil::before{content:"·";color:var(--muted)}
 .schemahost.editing .tx:focus{outline:none;background:var(--tint)}
 .sch-inline{margin-bottom:10px}
 .ln-cm-spacer{visibility:hidden!important;pointer-events:none}
+.ln-mode{display:flex;gap:6px;margin-bottom:10px}
+.ln-mode-btn.on{background:var(--tint);border-color:var(--tint-line);color:var(--focus);font-weight:600}
+.ln-edit{margin-top:10px}
+.ln-edit-text{font-family:var(--mono)!important;font-size:12.5px!important;margin-bottom:8px}
+.ln-edit .foldbar{margin-bottom:0}
+.ln-edit .count{padding-bottom:0;white-space:normal}
 .cmcell{flex:0 0 40px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--rule);background:#fafbfc}
 .ln-cm-btn{border:0;background:none;cursor:pointer;font-size:13px;padding:4px;border-radius:4px;color:var(--muted);position:relative;font-family:var(--sans);
   visibility:hidden}

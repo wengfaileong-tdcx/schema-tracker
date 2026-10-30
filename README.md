@@ -219,6 +219,12 @@ opening a text box, so comments stay beside the lines they refer to. Enter adds 
 Backspace on an empty line removes it. The cell is saved one property per line, keeping
 its `<script>` wrapper (one per block where the cell had several).
 
+Any line with a 💬 button in either section can also be edited on its own: open its
+comment panel and switch from **Comment** to **Edit this line**. The line's comments stay
+in view while you edit. A line removed in the latest version can only be commented on.
+Saving from **View code changes** stores the cell with properties in A–Z order, the order
+that section shows them in.
+
 JSON-LD has to parse before it can be saved. Before writing, the dashboard re-reads the
 page's row and refuses to save if the row has moved or the cell was changed since it
 loaded — reload the sheet and redo the edit. Only people with edit access to the
