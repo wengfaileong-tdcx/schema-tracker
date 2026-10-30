@@ -222,6 +222,12 @@ ul.chg li.nil::before{content:"·";color:var(--muted)}
 /* ---------- line comments (comment column beside a diff) ---------- */
 .gut span.gcm{flex:0 0 40px;padding:0}
 .diff.single{max-height:560px;overflow:auto}
+.schemahost.editing .diff{border-color:var(--focus)}
+.schemahost.editing .tx{cursor:text;border-radius:2px}
+.schemahost.editing .row:hover .tx{background:#f7f9fc}
+.schemahost.editing .tx:focus{outline:none;background:var(--tint)}
+.sch-inline{margin-bottom:10px}
+.ln-cm-spacer{visibility:hidden!important;pointer-events:none}
 .cmcell{flex:0 0 40px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--rule);background:#fafbfc}
 .ln-cm-btn{border:0;background:none;cursor:pointer;font-size:13px;padding:4px;border-radius:4px;color:var(--muted);position:relative;font-family:var(--sans);
   visibility:hidden}

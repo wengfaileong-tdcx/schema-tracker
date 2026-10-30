@@ -214,6 +214,11 @@ text for editing, with two ways to save:
 - **Fix current version** overwrites the current version's cell, for typos and mistakes.
   The old text is then only recoverable from Google Sheets' version history.
 
+In **View current schema**, Edit schema makes the lines themselves editable instead of
+opening a text box, so comments stay beside the lines they refer to. Enter adds a line;
+Backspace on an empty line removes it. The cell is saved one property per line, keeping
+its `<script>` wrapper (one per block where the cell had several).
+
 JSON-LD has to parse before it can be saved. Before writing, the dashboard re-reads the
 page's row and refuses to save if the row has moved or the cell was changed since it
 loaded — reload the sheet and redo the edit. Only people with edit access to the

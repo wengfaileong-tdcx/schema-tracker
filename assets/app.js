@@ -275,11 +275,16 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   };
 
-  function editPanel(cur) {
+  // inline: View current schema edits the lines in place, next to their
+  // comments, so the panel is just the hint and the save buttons.
+  function editPanel(cur, inline) {
     const sameDay = cur.date === todayIso();
-    return '<div class="sch-edit" hidden>' +
-      '<p class="hint">Editing the ' + esc(fmt(cur.date)) + ' version. Saving writes straight to the Google Sheet.</p>' +
-      '<textarea class="sch-text" spellcheck="false" aria-label="Schema markup"></textarea>' +
+    return '<div class="sch-edit' + (inline ? ' sch-inline' : '') + '" hidden>' +
+      (inline
+        ? '<p class="hint">Editing the ' + esc(fmt(cur.date)) + ' version in place. Click any line below to change it. ' +
+          'Enter adds a line, Backspace on an empty line removes it. Comments stay next to their lines.</p>'
+        : '<p class="hint">Editing the ' + esc(fmt(cur.date)) + ' version. Saving writes straight to the Google Sheet.</p>' +
+          '<textarea class="sch-text" spellcheck="false" aria-label="Schema markup"></textarea>') +
       '<div class="controls sch-bar">' +
       '<button class="primary sch-save" type="button" data-mode="new"' + (sameDay ? ' disabled' : '') + '>' +
       'Save as new version (' + esc(fmt(todayIso())) + ')</button>' +
@@ -306,6 +311,122 @@
 
   // After a save the whole list re-renders from the sheet, so reopen the
   // page that was edited and show its new diff.
+  /* ---------- editing View current schema in place ---------- */
+
+  function renderSchemaHost(host, page) {
+    host.innerHTML = D.singleView(show(ordered(page)[0]),
+      { diffId: DIFF_SCHEMA, comments: commentsFor(page, DIFF_SCHEMA), canPost: canComment() });
+    host.dataset.done = '1';
+  }
+
+  function makeEditable(tx) {
+    // plaintext-only keeps pasted formatting out; older browsers fall back.
+    try { tx.contentEditable = 'plaintext-only'; } catch (e) { tx.contentEditable = 'true'; }
+    tx.spellcheck = false;
+  }
+
+  const schemaLines = host => [].slice.call(host.querySelectorAll('.row')).map(r => r.querySelector('.tx').textContent);
+
+  function renumber(host) {
+    host.querySelectorAll('.row').forEach((r, i) => { r.querySelector('.no').textContent = i + 1; });
+  }
+
+  function caretOffset(tx) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return 0;
+    const r = sel.getRangeAt(0).cloneRange();
+    r.selectNodeContents(tx);
+    r.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+    return r.toString().length;
+  }
+
+  function placeCaret(tx, offset) {
+    tx.focus();
+    if (!tx.firstChild) tx.appendChild(document.createTextNode(''));
+    const node = tx.firstChild;
+    const r = document.createRange();
+    r.setStart(node, Math.min(offset, node.textContent.length));
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(r);
+  }
+
+  const nextRow = row => { let n = row.nextElementSibling; while (n && !n.classList.contains('row')) n = n.nextElementSibling; return n; };
+  const prevRow = row => { let n = row.previousElementSibling; while (n && !n.classList.contains('row')) n = n.previousElementSibling; return n; };
+
+  // Splits text into its top-level JSON values ({…} or […]), ignoring
+  // brackets inside strings. null if anything else sits between them.
+  function topLevelBlocks(text) {
+    const out = [];
+    let depth = 0, start = -1, inStr = false, escp = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inStr) { if (escp) escp = false; else if (c === '\\') escp = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') { inStr = true; continue; }
+      if (c === '{' || c === '[') { if (!depth) start = i; depth++; continue; }
+      if (c === '}' || c === ']') { depth--; if (!depth) out.push(text.slice(start, i + 1)); continue; }
+      if (!depth && /\S/.test(c)) return null;
+    }
+    return depth ? null : out;
+  }
+
+  // The lines on screen are the schema laid out one property per line, with
+  // several <script> blocks shown one after another. Put them back into the
+  // cell's own shape: the same <script> tag around each block, or a JSON
+  // array where the cell was a bare array.
+  function cellFromLines(cur, text) {
+    if (isText(cur)) return text;
+    const blocks = topLevelBlocks(text);
+    if (!blocks || !blocks.length) return text.trim(); // invalid: let checkEdit say why
+    const raw = String(cur.raw || '').trim();
+    const tag = raw.match(/^<script[^>]*>/i);
+    if (tag) return blocks.map(b => tag[0] + '\n' + b + '\n</script>').join('\n');
+    return blocks.length > 1 ? '[\n' + blocks.join(',\n') + '\n]' : blocks[0];
+  }
+
+  document.addEventListener('keydown', function (e) {
+    const tx = e.target;
+    if (!tx.classList || !tx.classList.contains('tx') || !tx.isContentEditable) return;
+    const row = tx.closest('.row'), host = tx.closest('.schemahost');
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Split the line at the caret into a new line, keeping the indent.
+      e.preventDefault();
+      const text = tx.textContent, at = caretOffset(tx);
+      tx.textContent = text.slice(0, at);
+      const indent = (text.match(/^\s*/) || [''])[0];
+      const fresh = document.createElement('div');
+      fresh.className = 'row';
+      // The invisible spacer gives the new line the same height as the others,
+      // so comment badges stay level with the lines they belong to.
+      fresh.innerHTML = '<span class="cell "><span class="no"></span><span class="tx"></span></span>' +
+        '<span class="cmcell"><span class="ln-cm-btn ln-cm-spacer" aria-hidden="true">💬</span></span>';
+      const after = row.nextElementSibling && row.nextElementSibling.classList.contains('ln-cm-panel') ? row.nextElementSibling : row;
+      after.after(fresh);
+      const ftx = fresh.querySelector('.tx');
+      ftx.textContent = indent + text.slice(at).replace(/^\s*/, '');
+      makeEditable(ftx);
+      renumber(host);
+      placeCaret(ftx, indent.length);
+      return;
+    }
+    if (e.key === 'Backspace' && !tx.textContent.length) {
+      // An empty line goes, unless it has comments to keep.
+      const up = prevRow(row);
+      if (!up || (row.nextElementSibling && row.nextElementSibling.classList.contains('ln-cm-panel'))) return;
+      e.preventDefault();
+      row.remove();
+      renumber(host);
+      placeCaret(up.querySelector('.tx'), up.querySelector('.tx').textContent.length);
+      return;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const to = e.key === 'ArrowUp' ? prevRow(row) : nextRow(row);
+      if (!to) return;
+      e.preventDefault();
+      placeCaret(to.querySelector('.tx'), caretOffset(tx));
+    }
+  });
+
   // section: 'schema' reopens View current schema, otherwise View code changes.
   function reopen(url, section) {
     const details = document.querySelector('#list details.page[data-url="' + CSS.escape(url) + '"]');
@@ -373,7 +494,7 @@
       '<span class="spacer"></span>' +
       (canEdit() ? '<button class="mini edit-schema" type="button">Edit schema</button>' : '') +
       '<button class="mini copy-schema" type="button">Copy schema</button></div>' +
-      (canEdit() ? editPanel(cur) : '') +
+      (canEdit() ? editPanel(cur, true) : '') +
       '<div class="schemahost"></div>' +
       '</div></details></div>';
 
@@ -622,12 +743,7 @@
 
     if (d.dataset.schema) {
       const host = d.querySelector('.schemahost');
-      if (host && !host.dataset.done) {
-        const page = pageByUrl(d.dataset.schema);
-        host.innerHTML = D.singleView(show(ordered(page)[0]),
-          { diffId: DIFF_SCHEMA, comments: commentsFor(page, DIFF_SCHEMA), canPost: canComment() });
-        host.dataset.done = '1';
-      }
+      if (host && !host.dataset.done) renderSchemaHost(host, pageByUrl(d.dataset.schema));
     }
   }, true);
 
@@ -652,15 +768,24 @@
       const fold = t.closest('.fold');
       const panel = fold.querySelector('.sch-edit');
       const opening = panel.hidden;
-      if (opening) {
-        const cur = ordered(pageByUrl(foldUrl(fold)))[0];
+      const page = pageByUrl(foldUrl(fold));
+      if (fold.dataset.schema) {
+        // In place: the lines become editable; closing redraws them from the
+        // data, which throws away anything unsaved.
+        const host = fold.querySelector('.schemahost');
+        renderSchemaHost(host, page);
+        host.classList.toggle('editing', opening);
+        if (opening) host.querySelectorAll('.row .tx').forEach(makeEditable);
+      } else if (opening) {
+        const cur = ordered(page)[0];
         // The cell's own text, so a <script> wrapper or the original
         // formatting survives an edit untouched.
         panel.querySelector('.sch-text').value = cur.raw != null ? cur.raw : show(cur);
       }
       panel.hidden = !opening;
+      panel.querySelector('.sch-msg').textContent = '';
       fold.querySelector('.edit-schema').textContent = opening ? 'Close editor' : 'Edit schema';
-      if (opening) panel.querySelector('.sch-text').focus();
+      if (opening && !fold.dataset.schema) panel.querySelector('.sch-text').focus();
       return;
     }
 
@@ -671,11 +796,18 @@
       const msg = panel.querySelector('.sch-msg');
       const page = pageByUrl(foldUrl(fold));
       const cur = ordered(page)[0];
-      const text = panel.querySelector('.sch-text').value.trim();
       const mode = t.dataset.mode;
+      let text;
+      if (fold.dataset.schema) {
+        const lines = schemaLines(fold.querySelector('.schemahost')).join('\n');
+        if (lines === show(cur)) { msg.textContent = 'Nothing has changed yet.'; return; }
+        text = cellFromLines(cur, lines);
+      } else {
+        text = panel.querySelector('.sch-text').value.trim();
+        if (text === (cur.raw != null ? cur.raw : show(cur).trim())) { msg.textContent = 'Nothing has changed yet.'; return; }
+      }
       const problem = checkEdit(cur, text);
       if (problem) { msg.textContent = problem; return; }
-      if (text === (cur.raw != null ? cur.raw : show(cur).trim())) { msg.textContent = 'Nothing has changed yet.'; return; }
       if (mode === 'fix' && !window.confirm('Overwrite the ' + fmt(cur.date) + ' version of ' + page.url +
         ' in the sheet? Its current text will only be recoverable from Google Sheets\' version history.')) return;
       const buttons = panel.querySelectorAll('button');
