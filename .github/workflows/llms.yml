@@ -1,0 +1,85 @@
+# Builds llms.txt / llms-full.txt for the sites in llms/sites.json.
+#
+# - "Check pages & update" in the tracker's llms.txt tab starts this with
+#   mode=update (optionally only for the URLs pasted there).
+# - Every Monday 09:00 (Malaysia time) it runs mode=check: it compares every
+#   page with the saved copy and writes llms/<site>/last-check.json so the
+#   tracker can show a reminder. A check never changes the saved pages or
+#   the two files.
+name: llms.txt
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "update = save changes and rebuild the files; check = compare only"
+        type: choice
+        options: [update, check]
+        default: update
+      site:
+        description: "Site id from llms/sites.json (blank = all sites)"
+        type: string
+        default: ""
+      urls:
+        description: "Only these pages (blank = every page + new ones in sitemap.xml / llms.txt)"
+        type: string
+        default: ""
+      add_urls:
+        description: "Start tracking these pages"
+        type: string
+        default: ""
+      remove_urls:
+        description: "Stop tracking these pages"
+        type: string
+        default: ""
+  schedule:
+    - cron: "0 1 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: llms
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/llms/package-lock.json
+
+      - name: Install
+        working-directory: scripts/llms
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Fetch pages
+        working-directory: scripts/llms
+        env:
+          MODE: ${{ github.event_name == 'schedule' && 'check' || inputs.mode }}
+          SITE: ${{ inputs.site }}
+          URLS: ${{ inputs.urls }}
+          ADD_URLS: ${{ inputs.add_urls }}
+          REMOVE_URLS: ${{ inputs.remove_urls }}
+        run: node crawl.mjs
+
+      - name: Save
+        run: |
+          git config user.name "llms-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add llms
+          if git diff --cached --quiet; then echo "Nothing to save"; exit 0; fi
+          git commit -m "llms: ${MODE_LABEL} $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase --quiet && git push && exit 0
+            sleep 5
+          done
+          exit 1
+        env:
+          MODE_LABEL: ${{ github.event_name == 'schedule' && 'weekly check' || inputs.mode }}

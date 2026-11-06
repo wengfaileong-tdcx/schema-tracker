@@ -1,0 +1,11 @@
+{
+  "name": "schema-tracker-llms",
+  "private": true,
+  "type": "module",
+  "description": "Fetches pages listed in llms/sites.json and builds llms.txt / llms-full.txt. Run by .github/workflows/llms.yml.",
+  "scripts": { "crawl": "node crawl.mjs" },
+  "dependencies": {
+    "linkedom": "0.18.13",
+    "turndown": "7.2.4"
+  }
+}

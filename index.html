@@ -27,6 +27,13 @@
 
   <div id="banner" class="noprint"></div>
 
+  <div class="tabs noprint" role="tablist" aria-label="Sections" hidden>
+    <button type="button" role="tab" data-tab="schema" aria-selected="true" aria-controls="list">Schema</button>
+    <button type="button" role="tab" data-tab="llms" aria-selected="false" aria-controls="llms" tabindex="-1">llms.txt</button>
+  </div>
+
+  <section id="llms" class="llms noprint" role="tabpanel" aria-label="llms.txt and llms-full.txt" hidden></section>
+
   <div id="hero" class="noprint"></div>
 
   <div id="recent" class="noprint"></div>
@@ -77,6 +84,8 @@
 <script src="data/schema-history.js"></script>
 <script src="data/sheet-config.js"></script>
 <script src="assets/app.js"></script>
+<script src="data/llms-config.js"></script>
+<script src="assets/llms.js"></script>
 <script src="https://accounts.google.com/gsi/client" defer></script>
 <script src="assets/sheet-loader.js" defer></script>
 </body>

@@ -265,3 +265,25 @@ It never writes to the sheet: add each new URL as a row with the schema in today
 
 `data/schema-history.js` ships with example content so the dashboard has something to
 render. Replace it with your real history before using it for anything.
+
+## llms.txt tab
+
+The **llms.txt** tab (next to **Schema**) builds `llms.txt` and `llms-full.txt` for the developer to upload. Schema still lives in the Google Sheet; this tab doesn't use the sheet.
+
+**Usual flow**
+1. The developer says which pages changed.
+2. Paste those URLs into **Pages the developer changed** and press **Check pages & update**. Leave the box empty to check every page, plus any new page in `sitemap.xml` or the live `llms.txt`.
+3. GitHub fetches the pages (1–2 minutes), saves only pages whose text changed, and rebuilds both files.
+4. Review what changed (click a page to see before/after), then **Download** both files and send them to the developer.
+
+**Other controls**
+- **Add page** tracks a page that isn't in the sitemap.
+- **Remove** stops tracking a page; it is left out of both files and won't come back from the sitemap. **Track again** undoes it.
+- **Every Monday 9am (MYT)** a check runs by itself. It only compares; nothing is saved. If anything changed, a yellow reminder appears with **Update these pages**.
+
+**Setup**
+- Starting a run from the tab needs a GitHub fine-grained token for this repo with **Actions: Read and write**. Use **Connect GitHub** to add one. It's kept in that browser only. Viewing and downloading need no token.
+- Sites: `llms/sites.json`. Each site has `base`, `sitemap`, `llmsTxt` (live llms.txt, used to find pages), `fetchFrom` (`live` or `staging` + `stagingBase`), `exclude` (path prefixes), `sections` (first path segment → heading in llms.txt), and `llmsTxtLinks` (add the linked page list under the intro).
+- Intro at the top of llms.txt: `llms/<site>/llms-intro.md`.
+- Saved data: `llms/<site>/pages/*.md` (one file per page), `index.json`, `last-run.json`, `last-check.json`, `llms.txt`, `llms-full.txt`. Git history keeps every older version.
+- Crawler: `scripts/llms/crawl.mjs`, run by `.github/workflows/llms.yml`. It respects robots.txt and does not bypass bot protection. Blocked pages show as **Couldn't fetch** and keep their last good copy. Text that only appears after JavaScript runs can be missing.
