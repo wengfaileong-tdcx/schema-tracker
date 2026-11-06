@@ -411,7 +411,17 @@
       if (resp.error) { report('error', 'Sign-in failed', resp.error); return; }
       currentToken = resp.access_token;
       setStatus('Reading sheet tabs…');
+      window.SchemaApp = window.SchemaApp || {};
+      window.SchemaApp.sheet = {
+        api: (path, opts) => api(currentToken, path, Object.assign({}, opts, {
+          headers: Object.assign({ Authorization: 'Bearer ' + currentToken }, opts && opts.headers)
+        })),
+        url: 'https://docs.google.com/spreadsheets/d/' + cfg.spreadsheetId + '/edit'
+      };
+      document.dispatchEvent(new CustomEvent('sheet-connected'));
       fetchTabs(currentToken)
+        // llms.txt tabs belong to the llms.txt tab of the dashboard, not the schema picker.
+        .then(tabs => tabs.filter(t => !/^llms /i.test(t)))
         .then(tabs => {
           if (!tabs.length) throw new Error('Spreadsheet has no tabs.');
           const sel = $('sheet-tab');

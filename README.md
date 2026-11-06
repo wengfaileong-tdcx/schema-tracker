@@ -268,24 +268,24 @@ render. Replace it with your real history before using it for anything.
 
 ## llms.txt tab
 
-> **Currently switched off** (`enabled: false` in `data/llms-config.js`, weekly schedule removed from the workflow) while llms data moves to the Google Sheet, so client content stays out of this public repo.
-
-The **llms.txt** tab (next to **Schema**) builds `llms.txt` and `llms-full.txt` for the developer to upload. Schema still lives in the Google Sheet; this tab doesn't use the sheet.
+The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds `llms.txt` and `llms-full.txt` for the developer. Everything is stored in the connected Google Sheet and a Drive folder, so only people with access to those can see it. Nothing about the sites' pages is stored in this repo.
 
 **Usual flow**
-1. The developer says which pages changed.
-2. Paste those URLs into **Pages the developer changed** and press **Check pages & update**. Leave the box empty to check every page, plus any new page in `sitemap.xml` or the live `llms.txt`.
-3. GitHub fetches the pages (1–2 minutes), saves only pages whose text changed, and rebuilds both files.
-4. Review what changed (click a page to see before/after), then **Download** both files and send them to the developer.
+1. Connect Google Sheet, open the **llms.txt** tab, pick the site.
+2. Live site: paste the URLs the developer changed and press **Check pages & update** (leave empty to check every page plus new ones in `sitemap.xml` / the live `llms.txt`). The sheet's script picks the request up within a minute and fetches the pages.
+3. Staging, or a site that blocks fetching: open each page in your browser, save it as "Webpage, HTML only" (or copy its source), then use **Upload pages**. Each file is matched to its live address and converted in the browser; check the addresses and press **Save**.
+4. Open changed pages to see before/now. Then **Download** both files (top of the tab) and send them to the developer. **Save both to Drive** keeps a dated copy in the Drive folder.
 
-**Other controls**
-- **Add page** tracks a page that isn't in the sitemap.
-- **Remove** stops tracking a page; it is left out of both files and won't come back from the sitemap. **Track again** undoes it.
-- **Every Monday 9am (MYT)** a check runs by itself. It only compares; nothing is saved. If anything changed, a yellow reminder appears with **Update these pages**.
+**Other controls**: **Add page** (a page not in the sitemap), **Remove** / **Track again**, and a weekly check every Monday 9am that only shows a reminder.
 
-**Setup**
-- Starting a run from the tab needs a GitHub fine-grained token for this repo with **Actions: Read and write**. Use **Connect GitHub** to add one. It's kept in that browser only. Viewing and downloading need no token.
-- Sites: `llms/sites.json`. Each site has `base`, `sitemap`, `llmsTxt` (live llms.txt, used to find pages), `fetchFrom` (`live` or `staging` + `stagingBase`), `exclude` (path prefixes), `sections` (first path segment → heading in llms.txt), and `llmsTxtLinks` (add the linked page list under the intro).
-- Intro at the top of llms.txt: `llms/<site>/llms-intro.md`.
-- Saved data: `llms/<site>/pages/*.md` (one file per page), `index.json`, `last-run.json`, `last-check.json`, `llms.txt`, `llms-full.txt`. Git history keeps every older version.
-- Crawler: `scripts/llms/crawl.mjs`, run by `.github/workflows/llms.yml`. It respects robots.txt and does not bypass bot protection. Blocked pages show as **Couldn't fetch** and keep their last good copy. Text that only appears after JavaScript runs can be missing.
+**Where things live**
+- `llms sites` tab: one row per site (ID, name, live URL, staging URL, sitemap, live llms.txt, paths to exclude, section names like `ai-diagnostic=AI Diagnostic; blog=Articles`, whether to list page links, and the **Intro** used at the top of llms.txt).
+- `llms pages` tab: one row per page with its Markdown and the previous Markdown (long pages continue in "Markdown 2" / "Previous 2").
+- `llms queue` tab: requests from the dashboard and the weekly check, with their results.
+- Drive: `LLMS_DRIVE_FOLDER_ID` in `sheet-scripts/llms.gs`; one subfolder per site.
+
+**Setup (once)**: in the sheet, Extensions → Apps Script → add a file named `llms`, paste [`sheet-scripts/llms.gs`](sheet-scripts/llms.gs), save, run `llmsSetup`, and allow the permissions. It creates the three tabs, fills in the sites, and starts the every-minute and Monday timers. The timers run as whoever ran `llmsSetup`.
+
+**Editing the code**: the HTML→Markdown converter and file builders are in `assets/llms-core.js` (used by the dashboard) and copied into `llms.gs`. After changing either `assets/llms-core.js` or `sheet-scripts/llms-server.js`, run `node scripts/build-llms-gs.mjs` and paste the new `llms.gs` into Apps Script.
+
+**Limits**: fetching respects robots.txt and never bypasses bot protection (those pages show "Couldn't fetch"; upload them). Text that only appears after JavaScript runs can be missing from a fetch. A cell holds 50,000 characters, so a page is split over two cells and cut at about 98,000.
