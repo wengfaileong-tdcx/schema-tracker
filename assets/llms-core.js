@@ -333,11 +333,90 @@ var LlmsCore = (function () {
     return out.trim() + '\n';
   }
 
+
+  /* ---------- following an edited version (three-way merge) ---------- */
+
+  // For each line of a, the index of the matching line in b (or -1).
+  // Common start/end are matched directly; the middle uses lines that occur
+  // once in both as anchors (fast on long files), and a full LCS only for
+  // small gaps between anchors.
+  function matchLines(a, b) {
+    var m = new Array(a.length).fill(-1);
+    function lcs(a0, a1, b0, b1) {
+      var n = a1 - a0, k = b1 - b0;
+      if (!n || !k) return;
+      if (n * k > 4000000) return;
+      var dp = [], i, j;
+      for (i = 0; i <= n; i++) dp.push(new Uint32Array(k + 1));
+      for (i = n - 1; i >= 0; i--) for (j = k - 1; j >= 0; j--)
+        dp[i][j] = a[a0 + i] === b[b0 + j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      i = 0; j = 0;
+      while (i < n && j < k) {
+        if (a[a0 + i] === b[b0 + j]) { m[a0 + i] = b0 + j; i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++;
+      }
+    }
+    function walk(a0, a1, b0, b1, depth) {
+      while (a0 < a1 && b0 < b1 && a[a0] === b[b0]) { m[a0] = b0; a0++; b0++; }
+      while (a0 < a1 && b0 < b1 && a[a1 - 1] === b[b1 - 1]) { a1--; b1--; m[a1] = b1; }
+      if (a0 >= a1 || b0 >= b1) return;
+      if ((a1 - a0) * (b1 - b0) <= 250000 || depth > 8) { lcs(a0, a1, b0, b1); return; }
+      var ca = {}, cb = {}, i;
+      for (i = a0; i < a1; i++) { var x = ca[a[i]]; ca[a[i]] = x ? { n: x.n + 1, i: x.i } : { n: 1, i: i }; }
+      for (i = b0; i < b1; i++) { var y = cb[b[i]]; cb[b[i]] = y ? { n: y.n + 1, i: y.i } : { n: 1, i: i }; }
+      var pairs = [];
+      for (i = a0; i < a1; i++) { var p = ca[a[i]], q = cb[a[i]]; if (p.n === 1 && q && q.n === 1) pairs.push([i, q.i]); }
+      if (!pairs.length) { lcs(a0, a1, b0, b1); return; }
+      // longest increasing run of b positions (patience)
+      var tails = [], prev = new Array(pairs.length);
+      pairs.forEach(function (pr, idx) {
+        var lo = 0, hi = tails.length;
+        while (lo < hi) { var mid = (lo + hi) >> 1; if (pairs[tails[mid]][1] < pr[1]) lo = mid + 1; else hi = mid; }
+        prev[idx] = lo ? tails[lo - 1] : -1; tails[lo] = idx;
+      });
+      var chain = [], t = tails[tails.length - 1];
+      while (t > -1) { chain.unshift(pairs[t]); t = prev[t]; }
+      var pa = a0, pb = b0;
+      chain.forEach(function (c) { walk(pa, c[0], pb, c[1], depth + 1); m[c[0]] = c[1]; pa = c[0] + 1; pb = c[1] + 1; });
+      walk(pa, a1, pb, b1, depth + 1);
+    }
+    walk(0, a.length, 0, b.length, 0);
+    return m;
+  }
+
+  // base: the generated text when you saved your version; mine: your saved
+  // version; theirs: what the pages generate now. Changes from the pages
+  // are applied to your version; where both changed the same lines, your
+  // lines are kept and the spot is reported as a conflict.
+  function merge3(base, mine, theirs) {
+    var o = String(base).split('\n'), a = String(mine).split('\n'), b = String(theirs).split('\n');
+    var ma = matchLines(o, a), mb = matchLines(o, b);
+    var out = [], conflicts = [], applied = 0, io = 0, ia = 0, ib = 0;
+    var eq = function (x, y) { return x.length === y.length && x.every(function (v, i) { return v === y[i]; }); };
+    for (;;) {
+      var k = io;
+      while (k < o.length && !(ma[k] >= ia && mb[k] >= ib)) k++;
+      var ak = k < o.length ? ma[k] : a.length, bk = k < o.length ? mb[k] : b.length;
+      var O = o.slice(io, k), A = a.slice(ia, ak), B = b.slice(ib, bk);
+      if (O.length || A.length || B.length) {
+        if (eq(A, O)) { if (!eq(B, O)) applied++; out.push.apply(out, B); }
+        else if (eq(B, O) || eq(A, B)) out.push.apply(out, A);
+        // both only added lines at the same spot: keep yours, then the new ones
+        else if (!O.length) { out.push.apply(out, A); out.push.apply(out, B); applied++; }
+        else { conflicts.push({ at: out.length, mine: A.join('\n'), theirs: B.join('\n'), base: O.join('\n') }); out.push.apply(out, A); }
+      }
+      if (k >= o.length) break;
+      out.push(o[k]); io = k + 1; ia = ak + 1; ib = bk + 1;
+    }
+    return { text: out.join('\n'), conflicts: conflicts, applied: applied };
+  }
+
   return {
     normUrl: normUrl, host: host, pathOf: pathOf, sameSite: sameSite, toLive: toLive,
     parse: parse, toMarkdown: toMarkdown, statedUrl: statedUrl, shortTitle: shortTitle, looksBlocked: looksBlocked,
     robotsRules: robotsRules, robotsAllow: robotsAllow,
-    parseSections: parseSections, buildLlmsTxt: buildLlmsTxt, buildLlmsFull: buildLlmsFull
+    parseSections: parseSections, buildLlmsTxt: buildLlmsTxt, buildLlmsFull: buildLlmsFull,
+    matchLines: matchLines, merge3: merge3
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = LlmsCore;

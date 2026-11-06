@@ -276,12 +276,18 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 3. Staging, or a site that blocks fetching: open each page in your browser, save it as "Webpage, HTML only" (or copy its source), then use **Upload pages**. Each file is matched to its live address and converted in the browser; check the addresses and press **Save**.
 4. Open changed pages to see before/now. Then **Download** both files (top of the tab) and send them to the developer. **Save both to Drive** keeps a dated copy in the Drive folder.
 
+**Editing and comments on the two files**
+- **View & comment** shows the file line by line; 💬 on a line adds a comment (stored in the "Line Comments" tab, like schema comments). Comments on lines that later change are listed under the file.
+- **Edit** opens the whole file. **Save as my version** stores it in the "llms files" tab (created automatically). From then on the file *follows your version*: each time pages change, the changes are merged into your text and your hand edits are kept. If a page changes a line you also edited, your line is kept and shown under "to review" with **Use the new text**. **Save this as my version** makes the merged result your new base; **Stop following my version** goes back to the generated file.
+- Download, Copy and **Save both to Drive** always use what you see (your version when you have one).
+
 **Other controls**: **Add page** (a page not in the sitemap), **Remove** / **Track again**, and a weekly check every Monday 9am that only shows a reminder.
 
 **Where things live**
 - `llms sites` tab: one row per site (ID, name, live URL, staging URL, sitemap, live llms.txt, paths to exclude, section names like `ai-diagnostic=AI Diagnostic; blog=Articles`, whether to list page links, and the **Intro** used at the top of llms.txt).
 - `llms pages` tab: one row per page with its Markdown and the previous Markdown (long pages continue in "Markdown 2" / "Previous 2").
 - `llms queue` tab: requests from the dashboard and the weekly check, with their results.
+- `llms files` tab: your saved versions of llms.txt / llms-full.txt (and the exact text of each Drive save).
 - Drive: `LLMS_DRIVE_FOLDER_ID` in `sheet-scripts/llms.gs`; one subfolder per site.
 
 **Setup (once)**: in the sheet, Extensions → Apps Script → add a file named `llms`, paste [`sheet-scripts/llms.gs`](sheet-scripts/llms.gs), save, run `llmsSetup`, and allow the permissions. It creates the three tabs, fills in the sites, and starts the every-minute and Monday timers. The timers run as whoever ran `llmsSetup`.

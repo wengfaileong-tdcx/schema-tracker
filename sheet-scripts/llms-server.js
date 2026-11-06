@@ -11,6 +11,8 @@
      llms sites  one row per website (address, staging, sitemap, intro)
      llms pages  one row per page (text as Markdown, previous text)
      llms queue  requests from the dashboard and the weekly check
+     llms files  your edited versions of llms.txt / llms-full.txt
+                 (added by the dashboard the first time you save one)
 
    Install (once, by someone with edit access to the sheet):
      1. Sheet -> Extensions -> Apps Script.
@@ -155,7 +157,7 @@ function llmsRun_(job, started) {
       return true;
     }
     if (job.action === 'save-drive') {
-      llmsSetJob_(job, 'Done', '', llmsSaveDrive_(site));
+      llmsSetJob_(job, 'Done', '', llmsSaveDrive_(site, job.urls.trim()));
       return true;
     }
     if (job.action !== 'update' && job.action !== 'check' && job.action !== 'add') throw new Error('Unknown action "' + job.action + '"');
@@ -332,15 +334,31 @@ function llmsSitemapFlags_(site, discovered) {
 
 /* ---------- Drive ---------- */
 
-function llmsSaveDrive_(site) {
+// The dashboard writes the exact text to save (including any edited
+// version) into the "llms files" tab under an export id; without one the
+// files are built from the saved pages.
+function llmsExport_(siteId, exportId) {
+  var sh = SpreadsheetApp.getActive().getSheetByName('llms files');
+  if (!exportId || !sh || sh.getLastRow() < 2) return null;
+  var parts = {};
+  sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues().forEach(function (r) {
+    if (String(r[0]) === siteId && String(r[2]) === exportId && String(r[3]) === 'export') (parts[r[1]] = parts[r[1]] || []).push([+r[6] || 0, String(r[7])]);
+  });
+  var out = {};
+  Object.keys(parts).forEach(function (f) { out[f] = parts[f].sort(function (a, b) { return a[0] - b[0]; }).map(function (p) { return p[1]; }).join(''); });
+  return out['llms.txt'] != null && out['llms-full.txt'] != null ? out : null;
+}
+
+function llmsSaveDrive_(site, exportId) {
   var pages = llmsPages_(site.id).filter(function (p) { return !p.removed && p.markdown; });
-  if (!pages.length) throw new Error('No saved pages for ' + site.name + ' yet.');
+  var exp = llmsExport_(site.id, exportId);
+  if (!pages.length && !exp) throw new Error('No saved pages for ' + site.name + ' yet.');
   var root = DriveApp.getFolderById(LLMS_DRIVE_FOLDER_ID);
   var it = root.getFoldersByName(site.name), folder = it.hasNext() ? it.next() : root.createFolder(site.name);
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
   var files = [
-    ['llms.txt', LlmsCore.buildLlmsTxt(site, pages)],
-    ['llms-full.txt', LlmsCore.buildLlmsFull(site, pages)]
+    ['llms.txt', exp ? exp['llms.txt'] : LlmsCore.buildLlmsTxt(site, pages)],
+    ['llms-full.txt', exp ? exp['llms-full.txt'] : LlmsCore.buildLlmsFull(site, pages)]
   ].map(function (f) {
     var file = folder.createFile(stamp + ' ' + f[0], f[1], 'text/plain');
     return { name: file.getName(), url: file.getUrl(), size: f[1].length };

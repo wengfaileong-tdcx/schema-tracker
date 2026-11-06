@@ -894,7 +894,7 @@
         panel = row.nextElementSibling;
       }
       panel.hidden = !panel.hidden;
-      const lineIdx = editableLine(row, lnBtn.dataset.diffId);
+      const lineIdx = row.closest('.page') ? editableLine(row, lnBtn.dataset.diffId) : null;
       if (!panel.hidden && lineIdx != null && !panel.querySelector('.ln-mode')) {
         const cur = ordered(pageByUrl(row.closest('.page').dataset.url))[0];
         panel.insertAdjacentHTML('afterbegin', lineEditBlock(cur));
@@ -976,8 +976,10 @@
       const nameEl = panel.querySelector('.cm-name'), bodyEl = panel.querySelector('.cm-body'), msg = panel.querySelector('.ln-cm-msg');
       const name = nameEl.value.trim(), text = bodyEl.value.trim();
       if (!name || !text) { msg.textContent = 'Enter your name and a comment.'; return; }
-      const page = t.closest('.page');
-      const url = page ? page.dataset.url : '';
+      // Schema pages carry their URL on .page; other views that reuse line
+      // comments (the llms.txt tab) put it on a [data-cm-url] wrapper.
+      const page = t.closest('.page') || t.closest('[data-cm-url]');
+      const url = page ? (page.dataset.url || page.dataset.cmUrl) : '';
       const diffId = panel.dataset.diffId, lineKey = panel.dataset.lineKey;
       const row = panel.previousElementSibling;
       const context = panel.dataset.snippet || '';
@@ -1003,6 +1005,8 @@
           else cmBtn.insertAdjacentHTML('beforeend', '<span class="ln-cm-count">' + n + '</span>');
         }
         nameEl.value = ''; bodyEl.value = ''; msg.textContent = 'Posted.';
+        document.dispatchEvent(new CustomEvent('line-comment-posted', { detail: {
+          url: url, diffId: diffId, lineKey: lineKey, comment: { name: entry.name, text: entry.text, ts: entry.ts, context: context } } }));
       });
       return;
     }

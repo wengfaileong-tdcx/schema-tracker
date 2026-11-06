@@ -16,7 +16,9 @@
   const D = window.SchemaDiff, C = window.LlmsCore;
   const esc = D.esc;
   const $ = id => document.getElementById(id);
-  const TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue' };
+  const TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue', files: 'llms files' };
+  const FILE_COLS = ['Site ID', 'File', 'Version', 'Kind', 'Saved at', 'Saved by', 'Part', 'Text'];
+  const CM_TAB = (window.SHEET_CONFIG || {}).lineCommentsTab || '';
   const CELL = 49000;
 
   const store = {
@@ -27,7 +29,8 @@
   const S = {
     started: false, connected: false, loading: false, missing: false, error: '',
     sites: [], pages: [], queue: [], siteId: store.get('llms-site'),
-    way: 'fetch', filter: 'all', open: {}, preview: null, job: null, uploads: [], pasteOpen: false
+    way: 'fetch', filter: 'all', open: {}, preview: null, job: null, uploads: [], pasteOpen: false,
+    versions: [], filesTab: false, comments: {}, editing: null, choices: {}
   };
 
   const sheet = () => window.SchemaApp && window.SchemaApp.sheet;
@@ -61,6 +64,7 @@
           status: x[6] || '', progress: x[7] || '', finished: x[8] || '', result: result };
       });
       if (!S.sites.some(s => s.id === S.siteId)) S.siteId = S.sites[0] ? S.sites[0].id : '';
+      await loadExtras();
     } catch (e) {
       if (/Unable to parse range|not found/i.test(e.message)) {
         S.missing = true;
@@ -74,6 +78,46 @@
       else S.error = 'Couldn’t read the sheet: ' + e.message;
     }
     S.loading = false; draw();
+  }
+
+
+  // Saved versions of the two files ("llms files" tab, created on first save)
+  // and line comments on them (the dashboard's existing "Line Comments" tab).
+  async function loadExtras() {
+    try {
+      const r = await sheet().api('/values/' + enc("'" + TAB.files + "'!A:H"));
+      S.filesTab = true;
+      const by = {};
+      (r.values || []).slice(1).forEach(x => {
+        const k = x[0] + '|' + x[1] + '|' + x[2];
+        const v = by[k] || (by[k] = { site: x[0], file: x[1], version: x[2], savedAt: x[4] || '', by: x[5] || '', parts: {} });
+        (v.parts[x[3]] = v.parts[x[3]] || []).push([+x[6] || 0, x[7] || '']);
+      });
+      S.versions = Object.values(by).map(v => {
+        const join = kind => (v.parts[kind] || []).sort((a, b) => a[0] - b[0]).map(p => p[1]).join('');
+        return { site: v.site, file: v.file, version: v.version, savedAt: v.savedAt, by: v.by,
+          reset: !!v.parts.reset, export: !!v.parts.export && !v.parts.mine, mine: join('mine'), base: join('base') };
+      }).filter(v => !v.export).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+    } catch (e) { S.filesTab = false; S.versions = []; }
+    S.comments = {};
+    if (!CM_TAB) return;
+    try {
+      const r = await sheet().api('/values/' + enc(CM_TAB));
+      const rows = r.values || [], head = (rows[0] || []).map(x => String(x || '').trim().toLowerCase());
+      const ix = n => head.indexOf(n);
+      rows.slice(1).forEach(x => {
+        const url = (x[ix('url')] || '').trim(), d = (x[ix('diffid')] || '').trim(), k = (x[ix('linekey')] || '').trim(), text = (x[ix('comment')] || '').trim();
+        if (!/\/llms(-full)?\.txt$/.test(url) || !d || !k || !text) return;
+        const res = ix('resolved') > -1 ? String(x[ix('resolved')] || '').trim().toLowerCase() : '';
+        addComment(url, d, k, { name: (x[ix('name')] || '').trim(), text: text, context: (x[ix('context')] || '').trim(),
+          ts: (x[ix('timestamp')] || '').trim(), resolved: !!res && res !== 'false' && res !== 'no' && res !== '0' });
+      });
+    } catch (e) { /* no comments tab yet */ }
+  }
+  function addComment(url, diffId, key, c) {
+    const u = S.comments[url] || (S.comments[url] = {});
+    const d = u[diffId] || (u[diffId] = {});
+    (d[key] = d[key] || []).push(c);
   }
 
   /* ---------- writing ---------- */
@@ -162,6 +206,57 @@
     await load();
   }
 
+
+  async function ensureFilesTab() {
+    if (S.filesTab) return;
+    await sheet().api(':batchUpdate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests: [{ addSheet: { properties: { title: TAB.files } } }] }) }).catch(e => {
+      if (!/already exists/i.test(e.message)) throw e;
+    });
+    await sheet().api('/values/' + enc("'" + TAB.files + "'!A1:H1") + '?valueInputOption=RAW', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [FILE_COLS] }) });
+    S.filesTab = true;
+  }
+  // kinds: {mine: text, base: text} for a version, {export: text}, or {reset: ''}
+  async function writeFileRows(fname, version, kinds) {
+    await ensureFilesTab();
+    const stamp = now(), rows = [];
+    Object.keys(kinds).forEach(kind => {
+      const t = String(kinds[kind] || '');
+      const n = Math.max(1, Math.ceil(t.length / CELL));
+      for (let i = 0; i < n; i++) rows.push([S.siteId, fname, version, kind, stamp, name(), String(i + 1), t.slice(i * CELL, (i + 1) * CELL)]);
+    });
+    await sheet().api('/values/' + enc("'" + TAB.files + "'!A:H") + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: rows }) });
+  }
+  async function saveVersion(fname, text, label) {
+    S.job = { label: label, status: 'Saving', progress: '' }; S.error = ''; draw();
+    try {
+      await writeFileRows(fname, 'v' + Date.now().toString(36), { mine: text, base: generated()[fname] });
+      delete S.choices[S.siteId + '|' + fname];
+      S.editing = null;
+      toast('Saved as your version of ' + fname);
+    } catch (e) { S.error = 'Couldn’t save your version: ' + e.message; }
+    S.job = null;
+    await loadExtras(); draw();
+  }
+  async function resetVersion(fname) {
+    S.job = { label: 'Use generated ' + fname, status: 'Saving', progress: '' }; draw();
+    try { await writeFileRows(fname, 'r' + Date.now().toString(36), { reset: '' }); toast(fname + ' follows the pages again'); }
+    catch (e) { S.error = 'Couldn’t switch back: ' + e.message; }
+    S.job = null;
+    await loadExtras(); draw();
+  }
+  async function saveToDrive() {
+    S.job = { label: 'Save to Drive', status: 'Saving', progress: '' }; S.error = ''; draw();
+    const id = 'x' + Date.now().toString(36);
+    try {
+      for (const f of ['llms.txt', 'llms-full.txt']) await writeFileRows(f, id, { export: output(f).text });
+    } catch (e) { S.error = 'Couldn’t prepare the files: ' + e.message; S.job = null; draw(); return; }
+    S.job = null;
+    enqueue('save-drive', id, 'Save to Drive');
+  }
+
   /* ---------- uploads (converted here, in the browser) ---------- */
 
   function addUpload(fileName, html, typedUrl) {
@@ -205,7 +300,26 @@
   const lastWeekly = () => jobsFor(q => q.action === 'check' && q.result)[0];
   const lastDrive = () => jobsFor(q => q.action === 'save-drive' && q.result)[0];
   const livePages = () => sitePages().filter(p => !p.removed && p.markdown);
-  const files = () => { const st = site(), ps = livePages(); return { 'llms.txt': C.buildLlmsTxt(st, ps), 'llms-full.txt': C.buildLlmsFull(st, ps) }; };
+  const generated = () => { const st = site(), ps = livePages(); return { 'llms.txt': C.buildLlmsTxt(st, ps), 'llms-full.txt': C.buildLlmsFull(st, ps) }; };
+  const files = () => ({ 'llms.txt': output('llms.txt').text, 'llms-full.txt': output('llms-full.txt').text });
+  const latestVersion = f => { const v = S.versions.find(x => x.site === S.siteId && x.file === f); return v && !v.reset ? v : null; };
+  const fileUrl = f => String(site().base || '').replace(/\/+$/, '') + '/' + f;
+
+  // What a file is right now: generated from the pages, or your saved
+  // version with whatever the pages changed since then merged in.
+  function output(f) {
+    const gen = generated()[f], v = latestVersion(f);
+    if (!v) return { text: gen, mode: 'generated', conflicts: [], applied: 0 };
+    if (v.base === gen) return { text: v.mine, mode: 'mine', conflicts: [], applied: 0, v: v };
+    const r = C.merge3(v.base, v.mine, gen);
+    const pick = S.choices[S.siteId + '|' + f] || {};
+    const lines = r.text.split('\n');
+    r.conflicts.slice().reverse().forEach((c, ri) => {
+      const i = r.conflicts.length - 1 - ri;
+      if (pick[i]) lines.splice(c.at, c.mine ? c.mine.split('\n').length : 0, ...(c.theirs ? c.theirs.split('\n') : []));
+    });
+    return { text: lines.join('\n'), mode: 'merged', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick };
+  }
 
   const PILL = { changed: ['Changed', 'lx-p-chg'], new: ['New', 'lx-p-new'], same: ['No change', 'lx-p-same'], failed: ['Couldn’t fetch', 'lx-p-fail'],
     removed: ['Removed', 'lx-p-same'], nourl: ['Needs address', 'lx-p-fail'] };
@@ -234,7 +348,7 @@
     const host = $('llms');
     if (!host || host.hidden) return;
     const keep = {};
-    if (!S.clearInputs) ['lx-urls', 'lx-add', 'lx-paste-url', 'lx-paste-src'].forEach(id => { if ($(id)) keep[id] = $(id).value; });
+    if (!S.clearInputs) ['lx-urls', 'lx-add', 'lx-paste-url', 'lx-paste-src', 'lx-edit-llms.txt', 'lx-edit-llms-full.txt'].forEach(id => { if ($(id)) keep[id] = $(id).value; });
     S.clearInputs = false;
     host.innerHTML = body();
     Object.keys(keep).forEach(id => { if ($(id)) $(id).value = keep[id]; });
@@ -279,25 +393,76 @@
   }
 
   function drawFiles() {
-    const f = files(), st = site(), d = lastDrive();
+    const st = site(), d = lastDrive(), b = !!S.job;
     const row = (fname, desc) => {
-      const shown = S.preview === fname;
-      return '<div class="lx-file"><div class="lx-file-top"><div><b>' + fname + '</b> <span class="lx-size">' + kb(f[fname]) + '</span>' +
-        '<div class="lx-file-d">' + desc + '</div></div><div class="lx-row">' +
-        '<button type="button" class="mini" data-lx="preview" data-file="' + fname + '" aria-expanded="' + shown + '">' + (shown ? 'Hide' : 'Preview') + '</button>' +
+      const o = output(fname), shown = S.preview === fname, editing = S.editing === fname;
+      const chip = o.mode === 'generated' ? '<span class="lx-chip">Generated from the pages</span>'
+        : '<span class="lx-chip lx-chip-mine">Your version · ' + esc(when(o.v.savedAt)) + (o.v.by ? ' · ' + esc(o.v.by) : '') + '</span>' +
+          (o.applied ? '<span class="lx-chip lx-chip-new">+ ' + o.applied + ' page update' + (o.applied > 1 ? 's' : '') + ' merged in</span>' : '') +
+          (o.conflicts.length ? '<span class="lx-chip lx-chip-warn">' + o.conflicts.length + ' to review</span>' : '');
+      const cmAll = ((S.comments[fileUrl(fname)] || {})[fname]) || {};
+      const openCm = Object.values(cmAll).reduce((n, l) => n + l.filter(c => !c.resolved).length, 0);
+      let body = '';
+      if (editing) {
+        body = '<div class="lx-editor"><label for="lx-edit-' + fname + '">Edit ' + fname + '</label>' +
+          '<textarea id="lx-edit-' + fname + '" class="lx-edit-ta" rows="22" spellcheck="false">' + esc(o.text) + '</textarea>' +
+          '<p class="lx-hint">After you save, this file follows your version: later page updates are merged into it, and anything you changed by hand is kept. Where a page changes a line you also changed, your line stays and is listed for review.</p>' +
+          '<div class="lx-row"><button type="button" class="primary" data-lx="save-edit" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Save as my version</button>' +
+          '<button type="button" data-lx="cancel-edit">Cancel</button></div></div>';
+      } else if (shown) {
+        let conf = '';
+        if (o.conflicts.length) {
+          conf = '<div class="lx-conf"><b>' + o.conflicts.length + ' place' + (o.conflicts.length > 1 ? 's' : '') + ' where the pages changed text you edited.</b> Your text is used unless you pick the new one.' +
+            o.conflicts.map((c, i) => '<div class="lx-conf-i"><div><span class="lx-conf-l">Your text</span><pre>' + esc(c.mine || '(you removed this)') + '</pre></div>' +
+              '<div><span class="lx-conf-l">New from the pages</span><pre>' + esc(c.theirs || '(removed from the pages)') + '</pre></div>' +
+              '<button type="button" class="mini" data-lx="pick" data-file="' + fname + '" data-i="' + i + '">' + (o.pick[i] ? 'Use mine instead' : 'Use the new text') + '</button></div>').join('') + '</div>';
+        }
+        const keep = o.mode === 'merged'
+          ? '<button type="button" class="mini primary" data-lx="bake" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Save this as my version</button>' : '';
+        const reset = o.mode !== 'generated'
+          ? '<button type="button" class="mini" data-lx="reset" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Stop following my version</button>' : '';
+        const view = D.singleView(o.text, { diffId: fname, comments: cmAll, canPost: !!(window.SchemaApp && window.SchemaApp.onPostComment) });
+        const orphan = orphanComments(o.text, cmAll);
+        body = conf + (keep || reset ? '<div class="lx-row lx-vbar">' + keep + reset + '</div>' : '') +
+          '<p class="lx-hint">Click 💬 next to a line to comment on it; highlight part of a line first to quote it.</p>' +
+          '<div class="lx-view" data-cm-url="' + esc(fileUrl(fname)) + '">' + view + '</div>' +
+          (orphan.length ? '<details class="lx-orphan"><summary>' + orphan.length + ' comment' + (orphan.length > 1 ? 's' : '') + ' on lines that have since changed</summary><ul class="cm-list">' +
+            orphan.map(D.commentItem).join('') + '</ul></details>' : '');
+      }
+      return '<div class="lx-file"><div class="lx-file-top"><div><b>' + fname + '</b> <span class="lx-size">' + kb(o.text) + '</span>' +
+        (openCm ? ' <span class="lx-cmc">💬 ' + openCm + '</span>' : '') +
+        '<div class="lx-file-d">' + desc + '</div><div class="lx-chips">' + chip + '</div></div><div class="lx-row">' +
+        '<button type="button" class="mini" data-lx="preview" data-file="' + fname + '" aria-expanded="' + shown + '">' + (shown ? 'Hide' : 'View &amp; comment') + '</button>' +
+        '<button type="button" class="mini" data-lx="edit" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Edit</button>' +
         '<button type="button" class="mini" data-lx="copy" data-file="' + fname + '">Copy</button>' +
-        '<button type="button" class="mini primary" data-lx="download" data-file="' + fname + '">Download</button></div></div>' +
-        (shown ? '<pre class="lx-pre lx-file-pre">' + esc(f[fname]) + '</pre>' : '') + '</div>';
+        '<button type="button" class="mini primary" data-lx="download" data-file="' + fname + '">Download</button></div></div>' + body + '</div>';
     };
     const driveLine = d && d.result && d.result.files
       ? 'Last saved to Drive ' + esc(when(d.finished)) + (d.by ? ' by ' + esc(d.by) : '') + ': ' + d.result.files.map(x => '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.name) + '</a>').join(', ')
       : 'Not saved to Drive yet.';
     return '<div class="lx-card"><div class="lx-files-h"><div><h3>Files for the developer</h3>' +
-      '<p class="lx-hint">Put together from the ' + livePages().length + ' saved pages of ' + esc(st.name) + '. Send both to the developer to upload to the site root.</p></div>' +
-      '<button type="button" data-lx="drive"' + (S.job || !livePages().length ? ' disabled' : '') + '>Save both to Drive</button></div>' +
+      '<p class="lx-hint">Built from the ' + livePages().length + ' saved pages of ' + esc(st.name) + ', or from your edited version when you have one. Send both to the developer to upload to the site root.</p></div>' +
+      '<button type="button" data-lx="drive"' + (b || !livePages().length ? ' disabled' : '') + '>Save both to Drive</button></div>' +
       row('llms.txt', (st.intro ? 'Intro from the sheet' : 'Site name and summary') + (st.links ? ' + a linked list of every page' : '')) +
       row('llms-full.txt', 'The full text of every page, one after another') +
       '<p class="lx-hint lx-drive">' + driveLine + '</p></div>';
+  }
+
+  // Comments whose line no longer exists in the file (its text was edited).
+  function orphanComments(text, cm) {
+    const d = text.split('\n').map(s => ({ s: s }));
+    const keys = new Set();
+    // same keys as D.singleView: trimmed line text hash, #n for repeats
+    const seen = {};
+    d.forEach(x => {
+      const t = String(x.s).trim(), m = t.match(/^"([^"]+)":/);
+      let h = 0;
+      for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+      const base = m ? m[1] : 'h' + (h >>> 0).toString(36);
+      const n = (seen[base] = (seen[base] || 0) + 1);
+      keys.add(n > 1 ? base + '#' + n : base);
+    });
+    return [].concat.apply([], Object.keys(cm).filter(k => !keys.has(k)).map(k => cm[k]));
   }
 
   function drawJob() {
@@ -430,7 +595,7 @@
   async function onClick(e) {
     const t = e.target.closest('[data-lx],[data-lx-filter],[data-site],[data-way]');
     if (!t || !$('llms').contains(t) || t.disabled) return;
-    if (t.dataset.site) { S.siteId = t.dataset.site; store.set('llms-site', S.siteId); S.filter = 'all'; S.open = {}; S.uploads = []; S.preview = null; S.clearInputs = true; draw(); return; }
+    if (t.dataset.site) { S.siteId = t.dataset.site; store.set('llms-site', S.siteId); S.filter = 'all'; S.open = {}; S.uploads = []; S.preview = null; S.editing = null; S.clearInputs = true; draw(); return; }
     if (t.dataset.way) { S.way = t.dataset.way; draw(); return; }
     if (t.dataset.lxFilter) { S.filter = t.dataset.lxFilter; draw(); return; }
     const act = t.dataset.lx, url = t.dataset.url, file = t.dataset.file;
@@ -457,9 +622,26 @@
       enqueue('remove', url, 'Remove page');
     }
     else if (act === 'readd') enqueue('add', url, 'Track again');
-    else if (act === 'drive') enqueue('save-drive', '', 'Save to Drive');
+    else if (act === 'drive') saveToDrive();
+    else if (act === 'edit') { S.editing = file; S.preview = null; draw(); const ta = $('lx-edit-' + file); if (ta) ta.focus(); }
+    else if (act === 'cancel-edit') { S.editing = null; draw(); }
+    else if (act === 'save-edit') {
+      const text = $('lx-edit-' + file).value;
+      if (text === output(file).text && output(file).mode !== 'generated') { S.editing = null; draw(); return; }
+      saveVersion(file, text, 'Save my version');
+    }
+    else if (act === 'bake') saveVersion(file, output(file).text, 'Save my version');
+    else if (act === 'reset') {
+      if (!window.confirm('Stop following your version of ' + file + '? It will be generated from the pages again. Your version stays in the “llms files” tab.')) return;
+      resetVersion(file);
+    }
+    else if (act === 'pick') {
+      const k = S.siteId + '|' + file, i = t.dataset.i;
+      const p = S.choices[k] || (S.choices[k] = {});
+      p[i] = !p[i]; draw();
+    }
     else if (act === 'toggle') { S.open[url] = !S.open[url]; draw(); }
-    else if (act === 'preview') { S.preview = S.preview === file ? null : file; draw(); }
+    else if (act === 'preview') { S.preview = S.preview === file ? null : file; S.editing = null; draw(); }
     else if (act === 'copy') copy(files()[file]);
     else if (act === 'download') {
       if (!livePages().length) { toast('No saved pages yet'); return; }
@@ -542,6 +724,10 @@
       if (!d) return;
       e.preventDefault(); d.classList.remove('over');
       readFiles(e.dataTransfer.files);
+    });
+    document.addEventListener('line-comment-posted', e => {
+      const d = e.detail || {};
+      if (/\/llms(-full)?\.txt$/.test(d.url || '')) addComment(d.url, d.diffId, d.lineKey, d.comment);
     });
     document.addEventListener('sheet-connected', () => {
       S.connected = true; S.started = !$('llms').hidden;
