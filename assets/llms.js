@@ -62,7 +62,15 @@
       });
       if (!S.sites.some(s => s.id === S.siteId)) S.siteId = S.sites[0] ? S.sites[0].id : '';
     } catch (e) {
-      if (/Unable to parse range|not found/i.test(e.message)) S.missing = true;
+      if (/Unable to parse range|not found/i.test(e.message)) {
+        S.missing = true;
+        // Show what the dashboard actually sees, so a script added to a
+        // different spreadsheet (or a setup that stopped early) is obvious.
+        try {
+          const info = await sheet().api('?fields=properties.title,sheets.properties.title');
+          S.diag = { title: (info.properties || {}).title || 'this spreadsheet', tabs: (info.sheets || []).map(x => x.properties.title), at: new Date() };
+        } catch (x) { S.diag = { error: x.message, at: new Date() }; }
+      }
       else S.error = 'Couldn’t read the sheet: ' + e.message;
     }
     S.loading = false; draw();
@@ -243,11 +251,22 @@
         '<li>Open the sheet → <b>Extensions → Apps Script</b>.</li>' +
         '<li>Add a script file named <b>llms</b> and paste the whole of <a href="https://github.com/' + esc(cfg.repo || 'wengfaileong-tdcx/schema-tracker') + '/blob/main/sheet-scripts/llms.gs" target="_blank" rel="noopener">sheet-scripts/llms.gs</a>. Keep your existing script as it is.</li>' +
         '<li>Save, choose <b>llmsSetup</b> at the top, press <b>Run</b>, and allow the permissions.</li>' +
-        '<li>Come back here and press <b>Reload</b>.</li></ol>' +
+        '<li>Come back here and press <b>Reload</b>.</li></ol>' + drawDiag() +
         '<button type="button" class="primary" data-lx="reload">Reload</button></div>' + drawError();
     }
     if (!S.sites.length) return drawError() + '<div class="empty">No sites in the “llms sites” tab yet. Add one row per website there, then Reload.</div>';
     return [drawSites(), drawError(), drawFiles(), drawGet(), drawWeekly(), drawStats(), drawList(), drawNotes()].join('');
+  }
+
+  function drawDiag() {
+    const d = S.diag;
+    if (!d) return '';
+    const t = d.at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    if (d.error) return '<p class="lx-diag">Checked at ' + t + ': couldn’t list the tabs (' + esc(d.error) + ').</p>';
+    const need = [TAB.sites, TAB.pages, TAB.queue], miss = need.filter(n => d.tabs.indexOf(n) < 0);
+    return '<div class="lx-diag"><b>Checked at ' + t + '</b> in the spreadsheet “' + esc(d.title) + '” (<a href="' + esc(sheet().url) + '" target="_blank" rel="noopener">open it</a>).<br>' +
+      'Tabs found: ' + esc(d.tabs.join(', ')) + '.<br>Still missing: <b>' + esc(miss.join(', ')) + '</b>.<br>' +
+      'If you added the script to a different spreadsheet, add it to this one instead. If llmsSetup showed an error when you ran it, send me that message.</div>';
   }
 
   function drawError() { return S.error ? '<div class="lx-err" role="alert">' + esc(S.error) + '</div>' : ''; }

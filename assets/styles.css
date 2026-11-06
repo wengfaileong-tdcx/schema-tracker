@@ -499,3 +499,4 @@ button.lx-tog::before{content:"▸";color:var(--muted);font-size:11px;width:10px
   .lx-up-s{text-align:left}
   .lx-sheetlink{margin-left:0;width:100%}
 }
+.lx-diag{font-size:13px;background:var(--warn-bg);color:var(--warn-ink);border:1px solid #dcc282;border-radius:8px;padding:10px 12px;margin:0 0 12px;line-height:1.6}
