@@ -1,26 +1,3 @@
 {
-  "sites": [
-    {
-      "id": "llmsource",
-      "name": "LLMSource",
-      "base": "https://llmsource.com",
-      "sitemap": "https://llmsource.com/sitemap.xml",
-      "llmsTxt": "https://llmsource.com/llms.txt",
-      "fetchFrom": "live",
-      "stagingBase": "",
-      "exclude": [],
-      "sections": {
-        "": "Home",
-        "verify": "Verify",
-        "company": "Company",
-        "products": "Products",
-        "solutions": "Solutions",
-        "blog": "Blog",
-        "glossary": "Glossary",
-        "ai-diagnostic": "AI Diagnostic",
-        "research-papers": "Research Papers"
-      },
-      "llmsTxtLinks": true
-    }
-  ]
+  "sites": []
 }

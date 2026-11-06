@@ -1344,8 +1344,8 @@
       '<p class="hint">For the dashboard to pull a page itself — rather than through the sheet — ' +
       'it needs to reach the page <i>and</i> be allowed to read the response.</p>' +
       '<div class="tools-row">' +
-      '<input type="text" class="probe-url" value="https://staging.llmsource.com/solutions/agency" ' +
-      'placeholder="https://staging.llmsource.com/…" spellcheck="false">' +
+      '<input type="text" class="probe-url" value="https://staging.example.com/about" ' +
+      'placeholder="https://staging.example.com/…" spellcheck="false">' +
       '<button type="button" class="mini probe-go">Check</button></div>' +
       '<div class="probe-out"></div>' +
       '</div></details>';

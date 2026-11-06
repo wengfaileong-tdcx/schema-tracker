@@ -268,6 +268,8 @@ render. Replace it with your real history before using it for anything.
 
 ## llms.txt tab
 
+> **Currently switched off** (`enabled: false` in `data/llms-config.js`, weekly schedule removed from the workflow) while llms data moves to the Google Sheet, so client content stays out of this public repo.
+
 The **llms.txt** tab (next to **Schema**) builds `llms.txt` and `llms-full.txt` for the developer to upload. Schema still lives in the Google Sheet; this tab doesn't use the sheet.
 
 **Usual flow**

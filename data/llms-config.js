@@ -15,6 +15,9 @@
    ============================================================ */
 
 window.LLMS_CONFIG = {
+  // Off while llms data moves to the Google Sheet (keeps client content
+  // out of this public repo). true shows the llms.txt tab again.
+  enabled: false,
   repo: "wengfaileong-tdcx/schema-tracker",
   branch: "main",
   workflow: "llms.yml"

@@ -2,10 +2,10 @@
 #
 # - "Check pages & update" in the tracker's llms.txt tab starts this with
 #   mode=update (optionally only for the URLs pasted there).
-# - Every Monday 09:00 (Malaysia time) it runs mode=check: it compares every
-#   page with the saved copy and writes llms/<site>/last-check.json so the
-#   tracker can show a reminder. A check never changes the saved pages or
-#   the two files.
+# - The weekly check is switched off while llms data moves to the Google
+#   Sheet. To turn it back on, add under "on:":
+#     schedule:
+#       - cron: "0 1 * * 1"   # Mondays 09:00 Malaysia time, check only
 name: llms.txt
 
 on:
@@ -32,8 +32,6 @@ on:
         description: "Stop tracking these pages"
         type: string
         default: ""
-  schedule:
-    - cron: "0 1 * * 1"
 
 permissions:
   contents: write

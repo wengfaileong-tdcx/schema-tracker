@@ -7,7 +7,7 @@
    browser only (localStorage) and sent only to api.github.com. */
 (function () {
   const cfg = window.LLMS_CONFIG || {};
-  if (!cfg.repo) return;
+  if (!cfg.repo || cfg.enabled === false) return;
   const D = window.SchemaDiff;
   const esc = D.esc;
   const $ = id => document.getElementById(id);
@@ -219,7 +219,7 @@
     const last = S.index && S.index.updatedAt;
     return '<div class="lx-card lx-update"><div class="lx-update-main">' +
       '<label for="lx-urls">Pages the developer changed <span class="lx-opt">(optional, one per line)</span></label>' +
-      '<textarea id="lx-urls" rows="3" placeholder="https://llmsource.com/pricing&#10;Leave empty to check every page, plus new pages in sitemap.xml"' + (b ? ' disabled' : '') + '></textarea>' +
+      '<textarea id="lx-urls" rows="3" placeholder="https://example.com/pricing&#10;Leave empty to check every page, plus new pages in sitemap.xml"' + (b ? ' disabled' : '') + '></textarea>' +
       '<div class="lx-row lx-actions"><button type="button" class="primary" data-lx="update"' + (b ? ' disabled' : '') + '>Check pages &amp; update</button>' +
       '<span class="lx-last">' + (b
         ? '<span class="lx-spin" aria-hidden="true"></span><span role="status">' + esc(b.step) + '</span>' + (b.url ? ' <a href="' + esc(b.url) + '" target="_blank" rel="noopener">Watch on GitHub</a>' : '')

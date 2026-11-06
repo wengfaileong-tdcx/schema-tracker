@@ -13,7 +13,7 @@
 
 window.SCHEMA_HISTORY = {
 
-  site: "llmsource.com",
+  site: "example.com",
 
   pages: [
 
@@ -31,55 +31,55 @@ window.SCHEMA_HISTORY = {
             "@graph": [
               {
                 "@type": "Brand",
-                "@id": "https://llmsource.com/#brand",
-                "name": "LLMSource",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#brand",
+                "name": "Example Co",
+                "url": "https://example.com/",
                 "logo": {
                   "@type": "ImageObject",
-                  "url": "https://llmsource.com/LLMSource-Logo.svg",
+                  "url": "https://example.com/logo.svg",
                   "width": 185,
                   "height": 37
                 },
                 "sameAs": [
-                  "https://www.linkedin.com/company/llmsource",
-                  "https://www.facebook.com/llmsource/",
-                  "https://www.instagram.com/llmsource/",
-                  "https://www.youtube.com/@llmsource",
-                  "https://x.com/LLMSource",
-                  "https://www.tiktok.com/@llmsource"
+                  "https://www.linkedin.com/company/example",
+                  "https://www.facebook.com/example/",
+                  "https://www.instagram.com/example/",
+                  "https://www.youtube.com/@example",
+                  "https://x.com/example",
+                  "https://www.tiktok.com/@example"
                 ]
               },
               {
                 "@type": "Organization",
-                "@id": "https://llmsource.com/#organization",
-                "name": "LLMSource",
-                "legalName": "LLMSOURCE PTE. LTD.",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#organization",
+                "name": "Example Co",
+                "legalName": "Example Company Ltd.",
+                "url": "https://example.com/",
                 "identifier": {
                   "@type": "PropertyValue",
-                  "propertyID": "UEN",
-                  "value": "202615639N"
+                  "propertyID": "CompanyID",
+                  "value": "000000000X"
                 },
                 "foundingDate": "2026-04-09",
                 "address": {
                   "@type": "PostalAddress",
-                  "streetAddress": "750D Chai Chee Road #06-01 ESR Biz Chee",
-                  "addressLocality": "Singapore",
-                  "postalCode": "469004",
-                  "addressCountry": "SG"
+                  "streetAddress": "1 Example Street",
+                  "addressLocality": "Example City",
+                  "postalCode": "00000",
+                  "addressCountry": "US"
                 },
                 "contactPoint": {
                   "@type": "ContactPoint",
                   "contactType": "Enquiry",
-                  "email": "enquiry@llmsource.com",
-                  "telephone": "+65 6216 1390"
+                  "email": "hello@example.com",
+                  "telephone": "+1 555 0100"
                 },
-                "brand": { "@id": "https://llmsource.com/#brand" },
+                "brand": { "@id": "https://example.com/#brand" },
                 "founder": {
                   "@type": "Person",
-                  "name": "Laurent Junique",
+                  "name": "Alex Example",
                   "jobTitle": "Chief Executive Officer",
-                  "sameAs": ["https://www.linkedin.com/in/laurentjunique"]
+                  "sameAs": ["https://www.linkedin.com/in/alexexample"]
                 }
               }
             ]
@@ -93,37 +93,37 @@ window.SCHEMA_HISTORY = {
             "@graph": [
               {
                 "@type": "Brand",
-                "@id": "https://llmsource.com/#brand",
-                "name": "LLMSource",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#brand",
+                "name": "Example Co",
+                "url": "https://example.com/",
                 "logo": {
                   "@type": "ImageObject",
-                  "url": "https://llmsource.com/logo.png"
+                  "url": "https://example.com/logo.png"
                 },
                 "sameAs": [
-                  "https://www.linkedin.com/company/llmsource",
-                  "https://www.facebook.com/llmsource/",
-                  "https://www.instagram.com/llmsource/",
-                  "https://www.youtube.com/@llmsource",
-                  "https://x.com/LLMSource",
-                  "https://www.tiktok.com/@llmsource"
+                  "https://www.linkedin.com/company/example",
+                  "https://www.facebook.com/example/",
+                  "https://www.instagram.com/example/",
+                  "https://www.youtube.com/@example",
+                  "https://x.com/example",
+                  "https://www.tiktok.com/@example"
                 ]
               },
               {
                 "@type": "Organization",
-                "@id": "https://llmsource.com/#organization",
-                "name": "LLMSource",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#organization",
+                "name": "Example Co",
+                "url": "https://example.com/",
                 "foundingDate": "2026",
                 "address": {
                   "@type": "PostalAddress",
-                  "addressLocality": "Singapore",
-                  "addressCountry": "SG"
+                  "addressLocality": "Example City",
+                  "addressCountry": "US"
                 },
-                "brand": { "@id": "https://llmsource.com/#brand" },
+                "brand": { "@id": "https://example.com/#brand" },
                 "founder": {
                   "@type": "Person",
-                  "name": "Laurent Junique",
+                  "name": "Alex Example",
                   "jobTitle": "Chief Executive Officer"
                 }
               }
@@ -138,33 +138,33 @@ window.SCHEMA_HISTORY = {
             "@graph": [
               {
                 "@type": "Brand",
-                "@id": "https://llmsource.com/#brand",
-                "name": "LLMSource",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#brand",
+                "name": "Example Co",
+                "url": "https://example.com/",
                 "sameAs": [
-                  "https://www.linkedin.com/company/llmsource",
-                  "https://www.facebook.com/llmsource/",
-                  "https://www.instagram.com/llmsource/",
-                  "https://www.youtube.com/@llmsource",
-                  "https://x.com/LLMSource",
-                  "https://www.tiktok.com/@llmsource"
+                  "https://www.linkedin.com/company/example",
+                  "https://www.facebook.com/example/",
+                  "https://www.instagram.com/example/",
+                  "https://www.youtube.com/@example",
+                  "https://x.com/example",
+                  "https://www.tiktok.com/@example"
                 ]
               },
               {
                 "@type": "Organization",
-                "@id": "https://llmsource.com/#organization",
-                "name": "LLMSource",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#organization",
+                "name": "Example Co",
+                "url": "https://example.com/",
                 "foundingDate": "2026",
                 "address": {
                   "@type": "PostalAddress",
-                  "addressLocality": "Singapore",
-                  "addressCountry": "SG"
+                  "addressLocality": "Example City",
+                  "addressCountry": "US"
                 },
-                "brand": { "@id": "https://llmsource.com/#brand" },
+                "brand": { "@id": "https://example.com/#brand" },
                 "founder": {
                   "@type": "Person",
-                  "name": "Laurent Junique",
+                  "name": "Alex Example",
                   "jobTitle": "Chief Executive Officer"
                 }
               }
@@ -180,22 +180,22 @@ window.SCHEMA_HISTORY = {
             "@graph": [
               {
                 "@type": "Organization",
-                "@id": "https://llmsource.com/#organization",
-                "name": "LLMSource",
-                "url": "https://llmsource.com/",
+                "@id": "https://example.com/#organization",
+                "name": "Example Co",
+                "url": "https://example.com/",
                 "foundingDate": "2026",
                 "address": {
                   "@type": "PostalAddress",
-                  "addressLocality": "Singapore",
-                  "addressCountry": "SG"
+                  "addressLocality": "Example City",
+                  "addressCountry": "US"
                 },
                 "sameAs": [
-                  "https://www.linkedin.com/company/llmsource",
-                  "https://www.facebook.com/llmsource/"
+                  "https://www.linkedin.com/company/example",
+                  "https://www.facebook.com/example/"
                 ],
                 "founder": {
                   "@type": "Person",
-                  "name": "Laurent Junique",
+                  "name": "Alex Example",
                   "jobTitle": "Chief Executive Officer"
                 }
               }
@@ -207,7 +207,7 @@ window.SCHEMA_HISTORY = {
 
     /* ---------------------------------------------------- */
     {
-      url: "/verify/llmsource",
+      url: "/verify/example",
       title: "Verify",
       status: "Live",
       versions: [
@@ -217,14 +217,14 @@ window.SCHEMA_HISTORY = {
           schema: {
             "@context": "https://schema.org",
             "@type": "WebPage",
-            "@id": "https://llmsource.com/verify/llmsource#webpage",
-            "name": "Verify LLMSource",
-            "url": "https://llmsource.com/verify/llmsource",
-            "isPartOf": { "@id": "https://llmsource.com/#website" },
+            "@id": "https://example.com/verify/example#webpage",
+            "name": "Verify Example Co",
+            "url": "https://example.com/verify/example",
+            "isPartOf": { "@id": "https://example.com/#website" },
             "breadcrumb": {
               "@type": "BreadcrumbList",
               "itemListElement": [
-                { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://llmsource.com/" },
+                { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://example.com/" },
                 { "@type": "ListItem", "position": 2, "name": "Verify" }
               ]
             }
@@ -236,9 +236,9 @@ window.SCHEMA_HISTORY = {
           schema: {
             "@context": "https://schema.org",
             "@type": "WebPage",
-            "@id": "https://llmsource.com/verify/llmsource#webpage",
-            "name": "Verify LLMSource",
-            "url": "https://llmsource.com/verify/llmsource"
+            "@id": "https://example.com/verify/example#webpage",
+            "name": "Verify Example Co",
+            "url": "https://example.com/verify/example"
           }
         }
       ]
@@ -256,9 +256,9 @@ window.SCHEMA_HISTORY = {
           schema: {
             "@context": "https://schema.org",
             "@type": "WebPage",
-            "@id": "https://llmsource.com/policies/terms-of-use#webpage",
+            "@id": "https://example.com/policies/terms-of-use#webpage",
             "name": "Terms of Use",
-            "url": "https://llmsource.com/policies/terms-of-use"
+            "url": "https://example.com/policies/terms-of-use"
           }
         }
       ]

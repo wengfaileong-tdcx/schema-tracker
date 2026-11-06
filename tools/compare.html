@@ -117,7 +117,7 @@
     el.className = 'entry';
     el.innerHTML =
       '<div class="entry-top"><div><label>Page URL</label>'+
-      '<input type="text" class="u" placeholder="https://llmsource.com/"></div>'+
+      '<input type="text" class="u" placeholder="https://example.com/"></div>'+
       '<button class="drop" type="button">Remove</button></div>'+
       '<div class="pair">'+
       '<div><label>Previous version</label><textarea class="o" spellcheck="false"></textarea></div>'+
@@ -274,9 +274,9 @@
   $('tpl').addEventListener('click', () => {
     const q = s => '"' + s.replace(/"/g,'""') + '"';
     const csv = 'URL,Previous schema,Current schema\n' +
-      [q('https://llmsource.com/'),
-       q('{\n  "@context": "https://schema.org",\n  "@type": "Organization",\n  "name": "LLMSource"\n}'),
-       q('{\n  "@context": "https://schema.org",\n  "@type": "Organization",\n  "name": "LLMSource",\n  "url": "https://llmsource.com/"\n}')
+      [q('https://example.com/'),
+       q('{\n  "@context": "https://schema.org",\n  "@type": "Organization",\n  "name": "Example Co"\n}'),
+       q('{\n  "@context": "https://schema.org",\n  "@type": "Organization",\n  "name": "Example Co",\n  "url": "https://example.com/"\n}')
       ].join(',') + '\n';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
