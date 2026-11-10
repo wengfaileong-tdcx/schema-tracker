@@ -106,6 +106,7 @@ var LlmsCore = (function () {
   /* ---------- page → Markdown ---------- */
 
   var BLOCK = /^(p|div|section|article|main|header|footer|aside|nav|ul|ol|li|h[1-6]|blockquote|pre|table|thead|tbody|tfoot|tr|figure|figcaption|dl|dt|dd|hr|address|details|summary|fieldset|form)$/;
+  var BOXED = /^(label|button|legend|output)$/;
   var DROP = /^(img|picture|input|select|textarea|option|button-icon|head|title|meta|link|base)$/;
 
   function hasBlock(n) { return (n.children || []).some(function (c) { return c.tag && (BLOCK.test(c.tag) || hasBlock(c)); }); }
@@ -143,7 +144,15 @@ var LlmsCore = (function () {
       var i = 0, items = [];
       kids.forEach(function (li) {
         var txt = li.tag ? render(li.tag === 'li' ? { tag: 'div', children: li.children, attrs: {} } : li, ctx) : clean(li.text || '');
-        txt = tidy(txt);
+        // One item stays one line: "**Title**: description", unless it holds a nested list.
+        txt = tidy(txt).split(/\n{2,}/).map(function (part, k) {
+          return k === 0 ? part.replace(/^#{1,6} (.+)$/, '**$1**') : part;   // a heading inside an item becomes its bold title
+        }).reduce(function (a, b) {
+          if (!a) return b;
+          if (/^([-*]|\d+\.) /.test(b)) return a + '\n' + b;
+          var last = a.split('\n').pop();
+          return a + (/^\*\*[^*]+\*\*$/.test(last) && !/[.?!:]\*\*$/.test(last) ? ': ' : ' ') + b;
+        }, '');
         if (!txt) return;
         i++;
         var mark = t === 'ol' ? i + '. ' : '- ';
@@ -154,8 +163,22 @@ var LlmsCore = (function () {
     if (t === 'blockquote') { var q = tidy(inline(kids, ctx)); return q ? '\n\n' + q.split('\n').map(function (l) { return '> ' + l; }).join('\n') + '\n\n' : ''; }
     if (t === 'table') return table(n, ctx);
     if (t === 'dt') { var dt = clean(inline(kids, ctx)); return dt ? '\n\n**' + dt + '**\n' : ''; }
-    var inner = inline(kids, ctx);
-    return BLOCK.test(t) ? '\n\n' + inner + '\n\n' : inner;
+    var cls = ' ' + String((n.attrs && n.attrs['class']) || '').replace(/\s+/g, ' ') + ' ';
+    // Children of a flex or grid box are separate boxes on screen: keep them apart.
+    var inner = / (flex|inline-flex|grid|inline-grid) /.test(cls) && !ctx.pre
+      ? kids.map(function (k) { return render(k, ctx); }).filter(function (x) { return x.trim(); }).reduce(function (a, b) {
+          if (!a) return b;
+          if (/ flex-col | grid /.test(cls)) return a + '\n\n' + b;
+          // no space before "%", "," or ")" or after "$" or "(": "47.3%", "$299"
+          return /[$(£€]\s*$/.test(a) || /^\s*[%.,;:!?)]/.test(b) ? a + b : a + ' ' + b;
+        }, '')
+      : inline(kids, ctx);
+    // Pages often make a span or small a block with a CSS class (Tailwind's
+    // "block", "flex"…), and form labels and buttons sit on their own line on
+    // screen. Without this their text runs together ("Monthly ad spendGoogle").
+    if (BLOCK.test(t) || BOXED.test(t) || / (block|flex|grid|table|list-item) /.test(cls)) return '\n\n' + inner + '\n\n';
+    if (/ inline-(block|flex|grid) /.test(cls)) return ' ' + inner + ' ';
+    return inner;
   }
 
   function wrapInline(s, m) {
@@ -192,7 +215,11 @@ var LlmsCore = (function () {
   }
 
   function tidy(md) {
-    return String(md).split('\n').map(function (l) { return l.replace(/[ \t]+$/, '').replace(/^[ \t]+(?![-\d>*])/, ''); })
+    return String(md).split('\n').map(function (l) {
+      return l.replace(/[ \t]+$/, '').replace(/^[ \t]+(?![-\d>*])/, '')
+        .replace(/(\S)[ \t]{2,}(?=\S)/g, '$1 ')   // spaces left where boxes were joined
+        .replace(/\*\*\*\*(?=\S)/g, '** **');      // two bold pieces side by side
+    })
       .filter(function (l) { return !/^[-*]\s*$/.test(l); })
       .join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
