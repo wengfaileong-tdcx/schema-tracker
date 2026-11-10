@@ -30,7 +30,7 @@
     started: false, connected: false, loading: false, missing: false, error: '',
     sites: [], pages: [], queue: [], siteId: store.get('llms-site'),
     way: 'fetch', filter: 'all', open: {}, preview: null, job: null, uploads: [], pasteOpen: false,
-    versions: [], filesTab: false, comments: {}, editing: null, choices: {}
+    versions: [], filesTab: false, comments: {}, editing: null, choices: {}, pageEdit: null
   };
 
   const sheet = () => window.SchemaApp && window.SchemaApp.sheet;
@@ -42,7 +42,7 @@
   async function load() {
     S.loading = true; S.error = ''; draw();
     try {
-      const r = await sheet().api('/values:batchGet?' + [TAB.sites + '!A:J', TAB.pages + '!A:O', TAB.queue + '!A:J']
+      const r = await sheet().api('/values:batchGet?' + [TAB.sites + '!A:J', TAB.pages + '!A:Q', TAB.queue + '!A:J']
         .map(x => 'ranges=' + enc("'" + x.replace('!', "'!"))).join('&'));
       const v = r.valueRanges.map(x => (x.values || []).slice(1));
       S.missing = false;
@@ -55,7 +55,7 @@
         row: i + 2, site: x[0] || '', url: x[1] || '', title: x[2] || '', description: x[3] || '', from: x[4] || '',
         added: /^y/i.test(x[5] || ''), removed: /^y/i.test(x[6] || ''), inSitemap: x[7] || '',
         lastChanged: x[8] || '', lastChecked: x[9] || '', lastError: x[10] || '',
-        markdown: (x[11] || '') + (x[12] || ''), previous: (x[13] || '') + (x[14] || ''), raw: x
+        markdown: (x[11] || '') + (x[12] || ''), previous: (x[13] || '') + (x[14] || ''), editBase: (x[15] || '') + (x[16] || ''), raw: x
       }));
       S.queue = v[2].map((x, i) => {
         let result = null;
@@ -174,22 +174,26 @@
     S.job = { label: 'Save uploads', status: 'Saving', progress: '' }; S.error = ''; draw();
     try {
       // Re-read the URL column so row numbers are current.
-      const r = await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:O"));
+      const r = await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:Q"));
       const rows = (r.values || []);
       const stamp = now(), updates = [], appends = [], results = [];
       items.forEach(u => {
         const i = rows.findIndex((x, k) => k > 0 && x[0] === S.siteId && x[1] === u.url);
         const old = i > 0 ? rows[i] : null;
         const prev = old ? (old[11] || '') + (old[12] || '') : '';
-        const md = split(u.md), pv = split(prev);
-        const row = [S.siteId, u.url, u.title, u.description, 'staging upload', old ? old[5] || '' : 'yes', '', old ? old[7] || '' : '',
-          stamp, stamp, u.md.length > CELL * 2 ? 'Text cut at ' + CELL * 2 + ' characters' : '', md[0], md[1], pv[0], pv[1]];
-        if (old) updates.push({ range: "'" + TAB.pages + "'!A" + (i + 1) + ':O' + (i + 1), values: [row] });
+        const base = old ? (old[15] || '') + (old[16] || '') : '';
+        // A page you edited by hand keeps your edits; the upload's changes are merged in.
+        const m = base ? C.mergePage(base, prev, u.md) : { md: u.md, conflicts: 0 };
+        const md = split(m.md), pv = split(prev), eb = base ? split(u.md) : ['', ''];
+        const note = m.md.length > CELL * 2 ? 'Text cut at ' + CELL * 2 + ' characters' : m.conflicts ? C.reviewNote(m.conflicts) : '';
+        const row = [S.siteId, u.url, u.title, u.description, base ? 'staging upload + your edits' : 'staging upload', old ? old[5] || '' : 'yes', '', old ? old[7] || '' : '',
+          stamp, stamp, note, md[0], md[1], pv[0], pv[1], eb[0], eb[1]];
+        if (old) updates.push({ range: "'" + TAB.pages + "'!A" + (i + 1) + ':Q' + (i + 1), values: [row] });
         else appends.push(row);
-        results.push({ u: u.url, t: u.title, s: prev ? (prev === u.md ? 'same' : 'changed') : 'new', up: 1 });
+        results.push({ u: u.url, t: u.title, s: prev ? ((base || prev) === u.md ? 'same' : 'changed') : 'new', up: 1 });
       });
       if (updates.length) await sheet().api('/values:batchUpdate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valueInputOption: 'RAW', data: updates }) });
-      if (appends.length) await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:O") + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: appends }) });
+      if (appends.length) await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:Q") + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: appends }) });
       const counts = {};
       results.forEach(x => { counts[x.s] = (counts[x.s] || 0) + 1; });
       await sheet().api('/values/' + enc("'" + TAB.queue + "'!A:J") + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
@@ -206,6 +210,32 @@
     await load();
   }
 
+
+  // Your own text for one page. "Edited from" keeps the page text your
+  // edit started from, so later fetches can merge into your text.
+  async function savePageText(url, text, undo) {
+    S.job = { label: undo ? 'Undo my edits' : 'Save page text', status: 'Saving', progress: '' }; S.error = ''; draw();
+    try {
+      const r = await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:Q"));
+      const rows = r.values || [];
+      const i = rows.findIndex((x, k) => k > 0 && x[0] === S.siteId && x[1] === url);
+      if (i < 1) throw new Error('this page isn’t in the sheet any more. Press Reload.');
+      const row = rows[i].slice();
+      while (row.length < 17) row.push('');
+      const cur = (row[11] || '') + (row[12] || ''), base = (row[15] || '') + (row[16] || '');
+      const newText = undo ? base : text, newBase = undo ? ['', ''] : split(base || cur);
+      const md = split(newText), pv = split(cur), stamp = now();
+      row[4] = undo ? 'live fetch' : 'edited by hand' + (name() ? ' (' + name() + ')' : '');
+      row[8] = stamp; row[10] = '';
+      row[11] = md[0]; row[12] = md[1]; row[13] = pv[0]; row[14] = pv[1]; row[15] = newBase[0]; row[16] = newBase[1];
+      await sheet().api('/values/' + enc("'" + TAB.pages + "'!A" + (i + 1) + ':Q' + (i + 1)) + '?valueInputOption=RAW', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [row] }) });
+      S.pageEdit = null;
+      toast(undo ? 'Back to the page’s own text' : 'Saved your text for ' + pathLabel(url));
+    } catch (e) { S.error = 'Couldn’t save the page text: ' + e.message; }
+    S.job = null;
+    await load();
+  }
 
   async function ensureFilesTab() {
     if (S.filesTab) return;
@@ -272,7 +302,7 @@
   }
   function rate(u) {
     const p = u.url && S.pages.find(x => x.site === S.siteId && x.url === u.url);
-    u.state = !u.url ? 'nourl' : !p || !p.markdown ? 'new' : p.markdown === u.md ? 'same' : 'changed';
+    u.state = !u.url ? 'nourl' : !p || !p.markdown ? 'new' : (p.editBase || p.markdown) === u.md ? 'same' : 'changed';
   }
   async function readFiles(list) {
     for (const f of Array.from(list)) {
@@ -547,8 +577,11 @@
     const lu = lastUpdate(), res = new Map(runResults().map(r => [r.u, r]));
     const all = sitePages();
     let f = S.filter === 'run' ? 'all' : S.filter;
+    // New and changed pages first, then ones to review or that failed, then the rest (latest change first).
+    const rank = x => x.r && (x.r.s === 'new' || x.r.s === 'changed') ? 0 : /^Review:/.test(x.p.lastError) ? 1 : x.r && x.r.s === 'failed' ? 2 : 3;
+    const order = (a, b) => rank(a) - rank(b) || String(b.p.lastChanged).localeCompare(String(a.p.lastChanged)) || String(a.p.url).localeCompare(String(b.p.url));
     const rows = f === 'all'
-      ? all.filter(p => !p.removed).map(p => ({ p: p, r: res.get(p.url) }))
+      ? all.filter(p => !p.removed).map(p => ({ p: p, r: res.get(p.url) })).sort(order)
       : runResults().filter(r => r.s === f).map(r => ({ p: all.find(p => p.url === r.u) || { url: r.u, title: r.t }, r: r }));
     const head = f === 'all' ? 'All pages' : PILL[f][0] + ' in the last update' + (lu ? ' (' + esc(when(lu.finished)) + ')' : '');
     const removed = all.filter(p => p.removed);
@@ -570,13 +603,25 @@
     if (p.from === 'staging upload') meta.push('From a staging upload');
     if (p.inSitemap === 'no') meta.push('Not in sitemap.xml');
     if (p.added) meta.push('Added by hand');
-    const err = r && r.e ? r.e : (!r && p.lastError ? 'Last try: ' + p.lastError : '');
+    if (p.editBase) meta.push('Has your edits');
+    const review = /^Review:/.test(p.lastError) ? p.lastError.replace(/^Review:\s*(.)/, (m, c) => c.toUpperCase()) : '';
+    const err = r && r.e ? r.e : (!r && p.lastError && !review ? 'Last try: ' + p.lastError : '');
+    const b = !!S.job, editing = S.pageEdit === p.url;
     let detail = '';
-    if (open && canOpen) {
+    if (editing) {
+      const id = 'lx-pe-' + p.row;
+      detail = '<div class="lx-editor"><label for="' + id + '">Edit the text of ' + esc(pathLabel(p.url)) + '</label>' +
+        '<textarea id="' + id + '" class="lx-edit-ta" rows="18" spellcheck="false">' + esc(p.markdown) + '</textarea>' +
+        '<p class="lx-hint">This text goes into llms-full.txt. When the page changes later, its changes are merged into your text and your edits are kept.</p>' +
+        '<div class="lx-row"><button type="button" class="primary" data-lx="page-save" data-url="' + esc(p.url) + '" data-ta="' + id + '"' + (b ? ' disabled' : '') + '>Save page text</button>' +
+        '<button type="button" data-lx="page-cancel">Cancel</button></div></div>';
+    } else if (open && canOpen) {
       if (p.previous && p.previous !== p.markdown) {
         const d = D.compare(p.previous, p.markdown, { text: true, full: false, context: 3, labels: { left: 'Before', right: 'Now' } });
         detail = '<div class="lx-sub">Last change</div>' + (d.error ? '<div class="lx-rerr">' + esc(d.error) + '</div>' : '<div class="lx-diff">' + d.html + '</div>');
       } else detail = '<pre class="lx-pre">' + esc(p.markdown || '(no text saved)') + '</pre>';
+      if (p.markdown) detail += '<div class="lx-row lx-pe-bar"><button type="button" class="mini" data-lx="page-edit" data-url="' + esc(p.url) + '"' + (b ? ' disabled' : '') + '>Edit text</button>' +
+        (p.editBase ? '<button type="button" class="mini" data-lx="page-undo" data-url="' + esc(p.url) + '"' + (b ? ' disabled' : '') + '>Undo my edits</button>' : '') + '</div>';
     }
     return '<div class="lx-r' + (open ? ' open' : '') + '"><div class="lx-r-top">' +
       (canOpen ? '<button type="button" class="lx-tog" data-lx="toggle" data-url="' + esc(p.url) + '" aria-expanded="' + open + '">' : '<div class="lx-tog lx-tog-static">') +
@@ -585,7 +630,7 @@
       '<a class="lx-ext" href="' + esc(p.url) + '" target="_blank" rel="noopener" aria-label="Open ' + esc(pathLabel(p.url)) + ' on the site">↗</a>' +
       (p.removed ? '' : '<button type="button" class="lx-x" data-lx="remove" data-url="' + esc(p.url) + '" aria-label="Stop tracking ' + esc(pathLabel(p.url)) + '"' + (S.job ? ' disabled' : '') + '>Remove</button>') +
       '</div></div>' + (meta.length ? '<div class="lx-meta">' + esc(meta.join(' · ')) + '</div>' : '') +
-      (err ? '<div class="lx-rerr">' + esc(err) + '</div>' : '') + detail + '</div>';
+      (err ? '<div class="lx-rerr">' + esc(err) + '</div>' : '') + (review ? '<div class="lx-rrev">' + esc(review) + '</div>' : '') + detail + '</div>';
   }
 
   function drawNotes() {
@@ -602,7 +647,7 @@
   async function onClick(e) {
     const t = e.target.closest('[data-lx],[data-lx-filter],[data-site],[data-way]');
     if (!t || !$('llms').contains(t) || t.disabled) return;
-    if (t.dataset.site) { S.siteId = t.dataset.site; store.set('llms-site', S.siteId); S.filter = 'all'; S.open = {}; S.uploads = []; S.preview = null; S.editing = null; S.clearInputs = true; draw(); return; }
+    if (t.dataset.site) { S.siteId = t.dataset.site; store.set('llms-site', S.siteId); S.filter = 'all'; S.open = {}; S.uploads = []; S.preview = null; S.editing = null; S.pageEdit = null; S.clearInputs = true; draw(); return; }
     if (t.dataset.way) { S.way = t.dataset.way; draw(); return; }
     if (t.dataset.lxFilter) { S.filter = t.dataset.lxFilter; draw(); return; }
     const act = t.dataset.lx, url = t.dataset.url, file = t.dataset.file;
@@ -648,6 +693,17 @@
       p[i] = p[i] !== undefined && p[i] !== false ? false : true; draw();
     }
     else if (act === 'toggle') { S.open[url] = !S.open[url]; draw(); }
+    else if (act === 'page-edit') { S.pageEdit = url; draw(); const ta = $('llms').querySelector('.lx-r .lx-edit-ta'); if (ta) ta.focus(); }
+    else if (act === 'page-cancel') { S.pageEdit = null; draw(); }
+    else if (act === 'page-save') {
+      const text = $(t.dataset.ta).value, p = sitePages().find(x => x.url === url);
+      if (p && text === p.markdown) { S.pageEdit = null; draw(); return; }
+      savePageText(url, text, false);
+    }
+    else if (act === 'page-undo') {
+      if (!window.confirm('Undo your edits to ' + pathLabel(url) + '? It goes back to the text from the page itself.')) return;
+      savePageText(url, '', true);
+    }
     else if (act === 'preview') { S.preview = S.preview === file ? null : file; S.editing = null; draw(); }
     else if (act === 'copy') copy(files()[file]);
     else if (act === 'download') {

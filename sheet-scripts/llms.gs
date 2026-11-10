@@ -39,7 +39,7 @@ var LLMS_CELL = 49000;                   // a cell holds 50,000 characters
 var LLMS_TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue' };
 var LLMS_COLS = {
   sites: ['Site ID', 'Name', 'Live URL', 'Staging URL', 'Sitemap', 'llms.txt URL', 'Exclude paths', 'Sections', 'Page links in llms.txt', 'Intro'],
-  pages: ['Site ID', 'URL', 'Title', 'Description', 'Text from', 'Added by hand', 'Removed', 'In sitemap', 'Last changed', 'Last checked', 'Last error', 'Markdown', 'Markdown 2', 'Previous', 'Previous 2'],
+  pages: ['Site ID', 'URL', 'Title', 'Description', 'Text from', 'Added by hand', 'Removed', 'In sitemap', 'Last changed', 'Last checked', 'Last error', 'Markdown', 'Markdown 2', 'Previous', 'Previous 2', 'Edited from', 'Edited from 2'],
   queue: ['ID', 'Requested at', 'Requested by', 'Site ID', 'Action', 'URLs', 'Status', 'Progress', 'Finished at', 'Result']
 };
 var LLMS_SEED_SITES = [
@@ -112,7 +112,7 @@ function llmsPages_(siteId) {
       return {
         row: x.row, url: String(v[1]), title: String(v[2]), description: String(v[3]), from: String(v[4]),
         added: llmsYes_(v[5]), removed: llmsYes_(v[6]), inSitemap: String(v[7]),
-        markdown: String(v[11] || '') + String(v[12] || ''), raw: v
+        markdown: String(v[11] || '') + String(v[12] || ''), editBase: String(v[15] || '') + String(v[16] || ''), raw: v
       };
     });
 }
@@ -181,7 +181,7 @@ function llmsRun_(job, started) {
         var p = byUrl[r.u];
         var item = { u: r.u, t: r.title || (p && p.title) || '' };
         if (r.error) { item.s = 'failed'; item.e = r.error; }
-        else item.s = !p || !p.markdown ? 'new' : p.markdown === r.md ? 'same' : 'changed';
+        else item.s = !p || !p.markdown ? 'new' : (p.editBase || p.markdown) === r.md ? 'same' : 'changed';
         if (write) byUrl[r.u] = llmsSave_(site, p, r, item, job.action === 'add');
         state.results.push(item);
       });
@@ -295,7 +295,7 @@ function llmsFetchMany_(site, urls, robots) {
 
 function llmsSave_(site, p, r, item, byHand) {
   var sh = llmsSheet_('pages'), now = llmsNow_();
-  var row = p ? p.raw.slice() : [site.id, r.u, '', '', '', '', '', '', '', '', '', '', '', '', ''];
+  var row = p ? p.raw.slice() : [site.id, r.u, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
   while (row.length < LLMS_COLS.pages.length) row.push('');
   if (byHand) { row[5] = 'yes'; row[6] = ''; }
   row[9] = now;
@@ -303,16 +303,25 @@ function llmsSave_(site, p, r, item, byHand) {
   else {
     row[2] = r.title; row[3] = r.description || ''; row[10] = '';
     if (item.s === 'new' || item.s === 'changed') {
-      var prev = llmsSplit_(p ? p.markdown : ''), cur = llmsSplit_(r.md);
+      var prev = llmsSplit_(p ? p.markdown : ''), md = r.md;
       row[4] = 'live fetch'; row[8] = now;
+      if (p && p.editBase) {
+        // You edited this page by hand: merge the page's changes into your text.
+        var m = LlmsCore.mergePage(p.editBase, p.markdown, r.md), base = llmsSplit_(r.md);
+        md = m.md; row[4] = 'live fetch + your edits'; row[15] = base[0]; row[16] = base[1];
+        if (m.conflicts) { row[10] = LlmsCore.reviewNote(m.conflicts); item.review = m.conflicts; }
+      }
+      var cur = llmsSplit_(md);
       row[11] = cur[0]; row[12] = cur[1]; row[13] = prev[0]; row[14] = prev[1];
-      if (r.md.length > LLMS_CELL * 2) row[10] = 'Text cut at ' + LLMS_CELL * 2 + ' characters';
+      if (md.length > LLMS_CELL * 2) row[10] = 'Text cut at ' + LLMS_CELL * 2 + ' characters';
+    } else if (p && /^Review:/.test(String(p.raw[10] || ''))) {
+      row[10] = p.raw[10];   // keep the review note until someone saves the page
     }
   }
   if (p) sh.getRange(p.row, 1, 1, row.length).setValues([row]);
   else { sh.appendRow(row); }
   var rowNum = p ? p.row : sh.getLastRow();
-  return { row: rowNum, url: r.u, title: row[2], markdown: String(row[11]) + String(row[12]), removed: llmsYes_(row[6]), raw: row };
+  return { row: rowNum, url: r.u, title: row[2], markdown: String(row[11]) + String(row[12]), editBase: String(row[15] || '') + String(row[16] || ''), removed: llmsYes_(row[6]), raw: row };
 }
 
 function llmsMark_(site, urls, removed) {
@@ -784,12 +793,25 @@ var LlmsCore = (function () {
     return { text: out.join('\n'), conflicts: conflicts, applied: applied };
   }
 
+  // A page you edited by hand: base is the page text your edit started
+  // from, mine is your edited text, fresh is the page text now. Your edits
+  // are kept; where the page changed a line you also changed, yours stays.
+  function mergePage(base, mine, fresh) {
+    if (fresh === base) return { md: mine, conflicts: 0, same: true };
+    var r = merge3(base, mine, fresh);
+    return { md: r.text, conflicts: r.conflicts.length, same: false };
+  }
+  function reviewNote(n) {
+    return 'Review: the page changed ' + n + ' place' + (n > 1 ? 's' : '') + ' you also edited. Your text was kept; compare with the live page.';
+  }
+
   return {
+    reviewNote: reviewNote,
     normUrl: normUrl, host: host, pathOf: pathOf, sameSite: sameSite, toLive: toLive,
     parse: parse, toMarkdown: toMarkdown, statedUrl: statedUrl, shortTitle: shortTitle, looksBlocked: looksBlocked,
     robotsRules: robotsRules, robotsAllow: robotsAllow,
     parseSections: parseSections, buildLlmsTxt: buildLlmsTxt, buildLlmsFull: buildLlmsFull,
-    matchLines: matchLines, merge3: merge3
+    matchLines: matchLines, merge3: merge3, mergePage: mergePage
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = LlmsCore;

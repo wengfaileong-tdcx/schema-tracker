@@ -278,6 +278,7 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 
 **Editing and comments on the two files**
 - **View & comment** shows the file line by line; 💬 on a line adds a comment (stored in the "Line Comments" tab, like schema comments). Comments on lines that later change are listed under the file.
+- **All pages** lists new and changed pages (from the last update) first, then pages to review or that couldn’t be fetched, then the rest by latest change. Open a page and press **Edit text** to change its text; it goes into llms-full.txt. The page text it started from is kept in the “Edited from” columns, so later fetches or uploads merge the page’s changes into your text. If the page changed a line you also edited, your line stays and the page shows a yellow review note. **Undo my edits** goes back to the page’s own text.
 - **Edit** opens the whole file. **Save as my version** stores it in the "llms files" tab (created automatically). From then on the file *follows your version*: each time pages change, the changes are merged into your text and your hand edits are kept. If a page changes a line you also edited, your line is kept and shown under "to review". There you can press **Use this box** to take the new text, or type straight into the "New from the pages" box, then press **Save my changes**. **Save this as my version** makes the merged result your new base; **Stop following my version** goes back to the generated file.
 - Download, Copy and **Save both to Drive** always use what you see (your version when you have one).
 

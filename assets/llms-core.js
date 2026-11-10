@@ -411,12 +411,25 @@ var LlmsCore = (function () {
     return { text: out.join('\n'), conflicts: conflicts, applied: applied };
   }
 
+  // A page you edited by hand: base is the page text your edit started
+  // from, mine is your edited text, fresh is the page text now. Your edits
+  // are kept; where the page changed a line you also changed, yours stays.
+  function mergePage(base, mine, fresh) {
+    if (fresh === base) return { md: mine, conflicts: 0, same: true };
+    var r = merge3(base, mine, fresh);
+    return { md: r.text, conflicts: r.conflicts.length, same: false };
+  }
+  function reviewNote(n) {
+    return 'Review: the page changed ' + n + ' place' + (n > 1 ? 's' : '') + ' you also edited. Your text was kept; compare with the live page.';
+  }
+
   return {
+    reviewNote: reviewNote,
     normUrl: normUrl, host: host, pathOf: pathOf, sameSite: sameSite, toLive: toLive,
     parse: parse, toMarkdown: toMarkdown, statedUrl: statedUrl, shortTitle: shortTitle, looksBlocked: looksBlocked,
     robotsRules: robotsRules, robotsAllow: robotsAllow,
     parseSections: parseSections, buildLlmsTxt: buildLlmsTxt, buildLlmsFull: buildLlmsFull,
-    matchLines: matchLines, merge3: merge3
+    matchLines: matchLines, merge3: merge3, mergePage: mergePage
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = LlmsCore;
