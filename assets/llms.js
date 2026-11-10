@@ -353,6 +353,23 @@
     return { text: lines.join('\n'), mode: 'merged', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick };
   }
 
+  // Comments on one "New from the pages" box: stored in the Line Comments tab
+  // like line comments, under "<file> review" and keyed by the new text, so
+  // they stay with that change.
+  const textKey = s => { let h = 0; s = String(s || '').trim(); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return 'r' + (h >>> 0).toString(36); };
+  const reviewId = f => f + ' review';
+  function reviewComments(fname, c) {
+    const diffId = reviewId(fname), key = textKey(c.theirs);
+    const list = (((S.comments[fileUrl(fname)] || {})[diffId]) || {})[key] || [];
+    const open = list.filter(x => !x.resolved).length;
+    const canPost = !!(window.SchemaApp && window.SchemaApp.onPostComment);
+    return '<div class="lx-conf-cm" data-cm-url="' + esc(fileUrl(fname)) + '"><div class="row lx-conf-row">' +
+      '<span class="cell" style="display:none"><span class="tx">' + esc(c.theirs || '') + '</span></span>' +
+      '<span class="cmcell">' + D.commentButton(diffId, key, open, list.length) + '</span>' +
+      '<span class="lx-conf-cml">' + (list.length ? list.length + ' comment' + (list.length > 1 ? 's' : '') + ' on this change' : 'Comment on this change') + '</span></div>' +
+      (list.length ? D.commentPanel(diffId, key, list, canPost) : '') + '</div>';
+  }
+
   const PILL = { changed: ['Changed', 'lx-p-chg'], new: ['New', 'lx-p-new'], same: ['No change', 'lx-p-same'], failed: ['Couldn’t fetch', 'lx-p-fail'],
     removed: ['Removed', 'lx-p-same'], nourl: ['Needs address', 'lx-p-fail'] };
   const pill = st => { const p = PILL[st] || [st, 'lx-p-same']; return '<span class="lx-pill ' + p[1] + '">' + p[0] + '</span>'; };
@@ -433,7 +450,8 @@
           (o.applied ? '<span class="lx-chip lx-chip-new">+ ' + o.applied + ' page update' + (o.applied > 1 ? 's' : '') + ' merged in</span>' : '') +
           (o.conflicts.length ? '<span class="lx-chip lx-chip-warn">' + o.conflicts.length + ' to review</span>' : '');
       const cmAll = ((S.comments[fileUrl(fname)] || {})[fname]) || {};
-      const openCm = Object.values(cmAll).reduce((n, l) => n + l.filter(c => !c.resolved).length, 0);
+      const cmRev = ((S.comments[fileUrl(fname)] || {})[reviewId(fname)]) || {};
+      const openCm = [cmAll, cmRev].reduce((n, m) => n + Object.values(m).reduce((k, l) => k + l.filter(c => !c.resolved).length, 0), 0);
       let body = '';
       if (editing) {
         body = '<div class="lx-editor"><label for="lx-edit-' + fname + '">Edit ' + fname + '</label>' +
@@ -449,7 +467,8 @@
               '<div><label class="lx-conf-l" for="lx-conf-' + fname + '-' + i + '">New from the pages (you can type here)</label>' +
               '<textarea id="lx-conf-' + fname + '-' + i + '" class="lx-conf-ta" data-lx-conf="' + fname + '" data-i="' + i + '" spellcheck="false" rows="' +
               Math.min(10, Math.max(2, (typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '').split('\n').length + 1)) + '"' +
-              (c.theirs ? '' : ' placeholder="(removed from the pages)"') + '>' + esc(typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '') + '</textarea></div>' +
+              (c.theirs ? '' : ' placeholder="(removed from the pages)"') + '>' + esc(typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '') + '</textarea>' +
+              reviewComments(fname, c) + '</div>' +
               '<button type="button" class="mini" data-lx="pick" data-file="' + fname + '" data-i="' + i + '">' + (o.pick[i] !== undefined && o.pick[i] !== false ? 'Use mine instead' : 'Use this box') + '</button></div>').join('') +
             '<div class="lx-row"><button type="button" class="primary" data-lx="bake" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Save my changes</button>' +
             '<span class="lx-hint">Saves what you picked or typed above as your version. Places you didn’t touch keep your text.</span></div></div>';
@@ -753,6 +772,7 @@
     SCHEMA_PARTS.forEach(id => { const n = $(id); if (n) n.classList.toggle('tab-off', llms); });
     document.querySelector('.topbar').classList.toggle('tab-off', llms);
     $('llms').hidden = !llms;
+    $('llms').classList.toggle('tab-off', !llms);   // .llms sets display, which beats [hidden]
     if (llms && S.connected && !S.started) { S.started = true; load(); }
     draw();
   }
@@ -799,7 +819,11 @@
     });
     document.addEventListener('line-comment-posted', e => {
       const d = e.detail || {};
-      if (/\/llms(-full)?\.txt$/.test(d.url || '')) addComment(d.url, d.diffId, d.lineKey, d.comment);
+      if (!/\/llms(-full)?\.txt$/.test(d.url || '')) return;
+      addComment(d.url, d.diffId, d.lineKey, d.comment);
+      const lbl = document.querySelector('.lx-conf-cm .ln-cm-panel[data-line-key="' + d.lineKey + '"]');
+      const row = lbl && lbl.previousElementSibling, l = row && row.querySelector('.lx-conf-cml');
+      if (l) { const n = lbl.querySelectorAll('.cm-item').length; l.textContent = n + ' comment' + (n > 1 ? 's' : '') + ' on this change'; }
     });
     document.addEventListener('sheet-connected', () => {
       S.connected = true; S.started = !$('llms').hidden;

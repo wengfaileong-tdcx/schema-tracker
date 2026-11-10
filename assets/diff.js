@@ -482,6 +482,6 @@ window.SchemaDiff = (function () {
     extract: extract, sortKeys: sortKeys, parse: parse, pretty: pretty,
     toLines: toLines, lines: lines, summarise: summarise, summariseText: summariseText,
     splitView: splitView, singleView: singleView, compare: compare, esc: esc,
-    commentPanel: commentPanel, commentItem: commentItem
+    commentPanel: commentPanel, commentItem: commentItem, commentButton: commentButton
   };
 })();
