@@ -296,3 +296,13 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 **Editing the code**: the HTML→Markdown converter and file builders are in `assets/llms-core.js` (used by the dashboard) and copied into `llms.gs`. After changing either `assets/llms-core.js` or `sheet-scripts/llms-server.js`, run `node scripts/build-llms-gs.mjs` and paste the new `llms.gs` into Apps Script.
 
 **Limits**: fetching respects robots.txt and never bypasses bot protection (those pages show "Couldn't fetch"; upload them). Text that only appears after JavaScript runs can be missing from a fetch. A cell holds 50,000 characters, so a page is split over two cells and cut at about 98,000.
+
+## Schema builder
+
+Each page in the Schema tab has a **Build / edit schema** button, and the toolbar has **+ New page schema**. Both open the builder panel (needs Google Sheet connected with edit access).
+
+- **Rules:** the builder uses the LLMSource Schema Flow’s own generator and data (currently **v180**, the version the developers build from). They are internal, so they are **not in this repo**: they live in the private sheet’s **“builder rules”** tab. Load them once from the panel (“Load the Schema Flow rules”) with a rules file made by `node scripts/export-builder-rules.mjs <saved Schema Flow page.html> <out.json> "Schema Flow v180"`. Load a new file only when Schema Flow itself is updated. Anyone who can edit the sheet can change these rules, and the dashboard runs the generator from them.
+- **Site settings** (per site, in the **“builder sites”** tab): the business category (Taxonomy row) and how many locations customers visit (single / multi / none). Values that are the same on every page (business name, description, telephone…) are saved here when you save a page, and fill in automatically next time.
+- **Per page:** pick the page type (Schema Flow’s Business View rows for that category and scope; the builder guesses from the page’s address and current schema). The template is Schema Flow’s, with the page address and site address put in. Every `{placeholder}` becomes a field, filled from the page’s latest version where the same property has a value, or from a saved copy of the page (.html). Empty fields stay as `{placeholders}`; saving warns about them and about Schema Flow’s stand-in values (e.g. `/logo.png`).
+- **Breadcrumb:** only if the page shows one (Schema Flow’s rule); the steps follow the address.
+- **Saving** writes today’s version for the page (or updates it if today’s already exists), or adds a new row for a new page. You can edit the JSON-LD by hand before saving, and compare it with the current version.

@@ -505,6 +505,12 @@
 
     h += '<div class="body">';
 
+    /* 0. schema builder (assets/builder.js) */
+    if (canEdit() && window.SchemaBuilder && !isText(cur)) {
+      h += '<div class="block bd-open"><button class="mini primary open-builder" type="button" data-url="' + esc(page.url) + '">Build / edit schema</button>' +
+        '<span class="count">From the Schema Flow rules, saved as a new version</span></div>';
+    }
+
     /* 1. code diff */
     h += '<div class="block">';
     if (vs.length > 1) {
@@ -1434,6 +1440,8 @@
   // Lets an external loader (e.g. assets/sheet-loader.js) swap in fresh data
   // without a page reload, and report its connection state into the header.
   window.SchemaApp = {
+    getPage: url => DATA.pages.find(p => p.url === url) || null,
+    ordered: ordered,
     setData: function (data, source) { DATA = data || { pages: [] }; SOURCE = source || 'sample'; renderAll(); },
     // state: 'idle' | 'busy' | 'ok' | 'error'
     setConnection: function (info) {

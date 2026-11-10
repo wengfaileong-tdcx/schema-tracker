@@ -282,6 +282,35 @@
       }));
   }
 
+  // Schema builder: a page that isn't in the tab yet becomes a new row, its
+  // schema in today's dated column.
+  function addPage(token, tab, url, title, status, text) {
+    return api(token, '/values/' + encodeURIComponent(tab)).then(res => {
+      const rows = res.values || [];
+      const head = (rows[0] || []).map(x => String(x || '').trim());
+      const urlIdx = findCol(head, ['url', 'page', 'link']), titleIdx = findCol(head, ['title', 'name']), statusIdx = findCol(head, ['status']);
+      if (urlIdx < 0) throw new Error('This tab has no URL column.');
+      if (rows.slice(1).some(r => sameUrl(r[urlIdx]) === sameUrl(url))) throw new Error('That page is already in this tab. Reload the sheet.');
+      const stamp = todayStamp();
+      let col = head.indexOf(stamp);
+      const writes = [];
+      if (col < 0) { col = head.length; writes.push({ range: a1(tab, colLetter(col) + '1'), values: [[stamp]] }); }
+      const row = [];
+      row[urlIdx] = url;
+      if (titleIdx > -1) row[titleIdx] = title || '';
+      if (statusIdx > -1) row[statusIdx] = status || '';
+      row[col] = text;
+      for (let i = 0; i < row.length; i++) if (row[i] == null) row[i] = '';
+      const n = rows.length + 1;
+      writes.push({ range: a1(tab, 'A' + n + ':' + colLetter(row.length - 1) + n), values: [row] });
+      return ensureColumns(token, tab, col + 1).then(() => api(token, '/values:batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valueInputOption: 'RAW', data: writes })
+      }));
+    });
+  }
+
   // Find & replace: saves several pages at once as today's version, in one
   // write. Every page gets the same check as a single edit; one that fails it
   // is skipped and reported, and the rest are still saved. A page whose
@@ -421,7 +450,7 @@
       document.dispatchEvent(new CustomEvent('sheet-connected'));
       fetchTabs(currentToken)
         // llms.txt tabs belong to the llms.txt tab of the dashboard, not the schema picker.
-        .then(tabs => tabs.filter(t => !/^llms /i.test(t)))
+        .then(tabs => tabs.filter(t => !/^(llms|builder) /i.test(t)))
         .then(tabs => {
           if (!tabs.length) throw new Error('Spreadsheet has no tabs.');
           const sel = $('sheet-tab');
@@ -461,6 +490,13 @@
         .catch(err => cb(err));
     };
     window.SchemaApp.sheetTab = () => currentTab;
+    window.SchemaApp.onAddPage = function (payload, cb) {
+      if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
+      addPage(currentToken, currentTab, payload.url, payload.title, payload.status, payload.text)
+        .then(() => loadTab(currentTab))
+        .then(() => cb(null))
+        .catch(err => cb(err));
+    };
   }
 
   bar.addEventListener('click', e => { if (e.target.id === 'sheet-connect') connect(); });
