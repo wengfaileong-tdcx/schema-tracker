@@ -316,7 +316,9 @@
     const lines = r.text.split('\n');
     r.conflicts.slice().reverse().forEach((c, ri) => {
       const i = r.conflicts.length - 1 - ri;
-      if (pick[i]) lines.splice(c.at, c.mine ? c.mine.split('\n').length : 0, ...(c.theirs ? c.theirs.split('\n') : []));
+      // pick[i]: true = the new text from the pages, a string = what you typed in its place
+      const use = typeof pick[i] === 'string' ? pick[i] : pick[i] ? c.theirs : null;
+      if (use != null) lines.splice(c.at, c.mine ? c.mine.split('\n').length : 0, ...(use ? use.split('\n') : []));
     });
     return { text: lines.join('\n'), mode: 'merged', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick };
   }
@@ -414,8 +416,13 @@
         if (o.conflicts.length) {
           conf = '<div class="lx-conf"><b>' + o.conflicts.length + ' place' + (o.conflicts.length > 1 ? 's' : '') + ' where the pages changed text you edited.</b> Your text is used unless you pick the new one.' +
             o.conflicts.map((c, i) => '<div class="lx-conf-i"><div><span class="lx-conf-l">Your text</span><pre>' + esc(c.mine || '(you removed this)') + '</pre></div>' +
-              '<div><span class="lx-conf-l">New from the pages</span><pre>' + esc(c.theirs || '(removed from the pages)') + '</pre></div>' +
-              '<button type="button" class="mini" data-lx="pick" data-file="' + fname + '" data-i="' + i + '">' + (o.pick[i] ? 'Use mine instead' : 'Use the new text') + '</button></div>').join('') + '</div>';
+              '<div><label class="lx-conf-l" for="lx-conf-' + fname + '-' + i + '">New from the pages (you can type here)</label>' +
+              '<textarea id="lx-conf-' + fname + '-' + i + '" class="lx-conf-ta" data-lx-conf="' + fname + '" data-i="' + i + '" spellcheck="false" rows="' +
+              Math.min(10, Math.max(2, (typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '').split('\n').length + 1)) + '"' +
+              (c.theirs ? '' : ' placeholder="(removed from the pages)"') + '>' + esc(typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '') + '</textarea></div>' +
+              '<button type="button" class="mini" data-lx="pick" data-file="' + fname + '" data-i="' + i + '">' + (o.pick[i] !== undefined && o.pick[i] !== false ? 'Use mine instead' : 'Use this box') + '</button></div>').join('') +
+            '<div class="lx-row"><button type="button" class="primary" data-lx="bake" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Save my changes</button>' +
+            '<span class="lx-hint">Saves what you picked or typed above as your version. Places you didn’t touch keep your text.</span></div></div>';
         }
         const keep = o.mode === 'merged'
           ? '<button type="button" class="mini primary" data-lx="bake" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Save this as my version</button>' : '';
@@ -638,7 +645,7 @@
     else if (act === 'pick') {
       const k = S.siteId + '|' + file, i = t.dataset.i;
       const p = S.choices[k] || (S.choices[k] = {});
-      p[i] = !p[i]; draw();
+      p[i] = p[i] !== undefined && p[i] !== false ? false : true; draw();
     }
     else if (act === 'toggle') { S.open[url] = !S.open[url]; draw(); }
     else if (act === 'preview') { S.preview = S.preview === file ? null : file; S.editing = null; draw(); }
@@ -713,6 +720,15 @@
     const host = $('llms');
     host.addEventListener('click', onClick);
     host.addEventListener('change', onChange);
+    // Typing in a review box: remember the text and use it for that place.
+    host.addEventListener('input', e => {
+      const ta = e.target.closest && e.target.closest('[data-lx-conf]');
+      if (!ta) return;
+      const k = S.siteId + '|' + ta.dataset.lxConf;
+      (S.choices[k] || (S.choices[k] = {}))[ta.dataset.i] = ta.value;
+      const btn = ta.closest('.lx-conf-i').querySelector('[data-lx="pick"]');
+      if (btn) btn.textContent = 'Use mine instead';
+    });
     host.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.target.id === 'lx-add') { e.preventDefault(); host.querySelector('[data-lx="add"]').click(); }
       if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('lx-drop')) { e.preventDefault(); $('lx-file').click(); }

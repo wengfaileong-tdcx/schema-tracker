@@ -278,7 +278,7 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 
 **Editing and comments on the two files**
 - **View & comment** shows the file line by line; 💬 on a line adds a comment (stored in the "Line Comments" tab, like schema comments). Comments on lines that later change are listed under the file.
-- **Edit** opens the whole file. **Save as my version** stores it in the "llms files" tab (created automatically). From then on the file *follows your version*: each time pages change, the changes are merged into your text and your hand edits are kept. If a page changes a line you also edited, your line is kept and shown under "to review" with **Use the new text**. **Save this as my version** makes the merged result your new base; **Stop following my version** goes back to the generated file.
+- **Edit** opens the whole file. **Save as my version** stores it in the "llms files" tab (created automatically). From then on the file *follows your version*: each time pages change, the changes are merged into your text and your hand edits are kept. If a page changes a line you also edited, your line is kept and shown under "to review". There you can press **Use this box** to take the new text, or type straight into the "New from the pages" box, then press **Save my changes**. **Save this as my version** makes the merged result your new base; **Stop following my version** goes back to the generated file.
 - Download, Copy and **Save both to Drive** always use what you see (your version when you have one).
 
 **Other controls**: **Add page** (a page not in the sitemap), **Remove** / **Track again**, and a weekly check every Monday 9am that only shows a reminder.

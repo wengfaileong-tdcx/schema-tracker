@@ -516,7 +516,10 @@ button.lx-tog::before{content:"▸";color:var(--muted);font-size:11px;width:10px
 .lx-conf{margin-top:10px;background:var(--warn-bg);color:var(--warn-ink);border:1px solid #dcc282;border-radius:8px;padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:10px}
 .lx-conf-i{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:start}
 .lx-conf-i pre{margin:3px 0 0;background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:8px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow:auto}
-.lx-conf-l{font-size:11.5px;font-weight:600}
+.lx-conf-l{font-size:11.5px;font-weight:600;display:block}
+.lx-conf-ta{display:block;width:100%;box-sizing:border-box;margin:3px 0 0;background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:8px;font-family:var(--mono);font-size:12px;resize:vertical}
+.lx-conf-ta:focus{outline:2px solid var(--focus);outline-offset:1px}
+.lx-conf .lx-row .lx-hint{margin:0;align-self:center}
 .lx-orphan{margin-top:10px;font-size:13px}
 .lx-orphan summary{cursor:pointer;color:var(--muted)}
 @media(max-width:720px){.lx-conf-i{grid-template-columns:1fr}}
