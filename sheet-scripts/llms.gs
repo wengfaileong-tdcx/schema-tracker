@@ -148,6 +148,10 @@ function llmsSetJob_(job, status, progress, result) {
 function llmsRun_(job, started) {
   var props = PropertiesService.getScriptProperties(), key = 'llms-job-' + job.id;
   try {
+    if (job.action === 'find-urls') {
+      llmsSetJob_(job, 'Done', '', llmsFindUrls_(job.urls.trim()));
+      return true;
+    }
     if (job.action === 'page-read') {
       llmsSetJob_(job, 'Done', '', llmsReadPage_(job.urls.trim()));
       return true;
@@ -326,6 +330,50 @@ function llmsReadPage_(url) {
   // The Result cell holds about 49,000 characters; keep whole blocks only.
   while (JSON.stringify(out).length > 45000 && out.ld.length) { out.ld.pop(); out.trimmed = true; }
   return out;
+}
+
+// For the schema builder's "Find new pages": every page address in the
+// site's sitemap(s), with its lastmod, written to the "builder urls" tab
+// (Site | URL | Last modified | Found at), replacing that site's old list.
+var LLMS_URLS_TAB = 'builder urls', LLMS_URLS_MAX = 5000;
+function llmsFindUrls_(origin) {
+  var base = LlmsCore.normUrl(origin);
+  if (!base) return { action: 'find-urls', error: 'Not a site address.' };
+  base = base.replace(/^(https?:\/\/[^\/]+).*$/, '$1');
+  var maps = [];
+  try { llmsSites_().forEach(function (s) { if (s.sitemap && LlmsCore.sameSite(s.base, base)) maps.push(s.sitemap); }); } catch (e) { /* no llms sites tab */ }
+  var rb = llmsGet_(base + '/robots.txt');
+  if (rb.status === 200) String(rb.body).replace(/^\s*sitemap:\s*(\S+)/gim, function (m, u) { maps.push(u); return m; });
+  if (!maps.length) maps.push(base + '/sitemap.xml');
+  maps = maps.filter(function (u, i) { return maps.indexOf(u) === i; });
+  var found = {}, list = [], errors = [];
+  function walk(url, depth) {
+    if (depth > 3 || list.length >= LLMS_URLS_MAX) return;
+    var r = llmsGet_(url);
+    if (r.status !== 200 || LlmsCore.looksBlocked(r.status, r.body)) { errors.push(url + ': ' + (LlmsCore.looksBlocked(r.status, r.body || '') ? 'blocked by bot protection' : 'HTTP ' + r.status)); return; }
+    var body = String(r.body), m;
+    if (/<sitemapindex/i.test(body)) {
+      var re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+      while ((m = re.exec(body))) walk(m[1].replace(/&amp;/g, '&'), depth + 1);
+      return;
+    }
+    var ure = /<url>([\s\S]*?)<\/url>/gi;
+    while ((m = ure.exec(body)) && list.length < LLMS_URLS_MAX) {
+      var loc = (m[1].match(/<loc>\s*([^<\s]+)\s*<\/loc>/i) || [])[1], mod = (m[1].match(/<lastmod>\s*([^<\s]+)\s*<\/lastmod>/i) || [])[1] || '';
+      var u = loc && LlmsCore.normUrl(loc.replace(/&amp;/g, '&'));
+      if (u && LlmsCore.sameSite(u, base) && !found[u]) { found[u] = true; list.push([base, loc.replace(/&amp;/g, '&'), mod]); }
+    }
+  }
+  maps.forEach(function (u) { walk(u, 0); });
+  if (!list.length) return { action: 'find-urls', site: base, error: 'No pages found in ' + maps.join(', ') + (errors.length ? ' (' + errors.slice(0, 3).join('; ') + ')' : '') };
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(LLMS_URLS_TAB);
+  var head = ['Site', 'URL', 'Last modified', 'Found at'];
+  if (!sh) { sh = ss.insertSheet(LLMS_URLS_TAB); sh.getRange(1, 1, 1, 4).setValues([head]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  var keep = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().filter(function (r) { return r[0] && !LlmsCore.sameSite(String(r[0]), base); }) : [];
+  var now = llmsNow_(), rows = keep.concat(list.map(function (x) { return [x[0], x[1], x[2], now]; }));
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
+  sh.getRange(2, 1, rows.length, 4).setNumberFormat('@').setValues(rows);
+  return { action: 'find-urls', site: base, sitemaps: maps, count: list.length, capped: list.length >= LLMS_URLS_MAX, problems: errors.slice(0, 5) };
 }
 
 /* ---------- writing pages ---------- */

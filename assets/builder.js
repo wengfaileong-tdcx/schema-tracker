@@ -33,7 +33,7 @@
   const S = {
     connected: false, loading: false, err: '', missing: false, index: null, rules: null, bv: {}, gens: {},
     sites: [], open: false, url: '', page: null, base: '', typeIdx: -1, vals: {}, prefill: {}, crumbsOn: false,
-    trail: '', wrap: false, live: null, liveBusy: false, showLiveDiff: false, fillSchema: null, out: '', manual: false, showDiff: false, msg: '', busy: false, newStatus: 'Draft', newTitle: ''
+    trail: '', wrap: false, live: null, liveBusy: false, found: [], foundAt: '', findBusy: false, findSite: '', findFilter: '', findMore: 0, showLiveDiff: false, fillSchema: null, out: '', manual: false, showDiff: false, msg: '', busy: false, newStatus: 'Draft', newTitle: ''
   };
   const app = () => window.SchemaApp || {};
   const api = (p, o) => app().sheet.api(p, o);
@@ -293,7 +293,7 @@
 
   async function openFor(url) {
     const A = app();
-    S.open = true; S.err = ''; S.msg = ''; S.vals = {}; S.prefill = {}; S.showDiff = false; S.live = null; S.fillSchema = null; S.showLiveDiff = false; S.types = null; S.typeIdx = -1;
+    S.open = true; S.err = ''; S.msg = ''; S.liveBusy = false; S.findBusy = false; S.findFilter = ''; S.findMore = 0; S.vals = {}; S.prefill = {}; S.showDiff = false; S.live = null; S.fillSchema = null; S.showLiveDiff = false; S.types = null; S.typeIdx = -1;
     S.page = url ? (A.getPage && A.getPage(url)) : null;
     S.url = url || ''; S.newTitle = '';
     const cur = S.page ? A.ordered(S.page)[0] : null;
@@ -306,6 +306,7 @@
     try {
       if (!S.rules && !S.missing) await loadRules();
       await loadSites();
+      if (!S.page) await loadFound();
       await pickSite();
     } catch (e) { S.err = 'Couldn’t load the builder: ' + e.message; }
     S.loading = false; draw();
@@ -376,6 +377,7 @@
   function body(isNew) {
     const site = S.base && siteFor(S.base);
     let h = '';
+    if (isNew && !S.url) h += foundSection();
     if (isNew) h += '<div class="bd-grid2"><label class="bd-span2">Page address<input type="url" id="bd-url" value="' + esc(S.url) + '" placeholder="https://www.example.com/page/"></label>' +
       '<label>Title (for the tracker)<input type="text" id="bd-title" value="' + esc(S.newTitle) + '"></label>' +
       '<label>Status<select id="bd-status">' + ['Draft', 'Live', ''].map(s => '<option value="' + s + '"' + (S.newStatus === s ? ' selected' : '') + '>' + (s || '(blank)') + '</option>').join('') + '</select></label></div>';
@@ -450,26 +452,82 @@
     return h;
   }
 
+  // Ask the sheet's Apps Script (through the llms.txt queue) to do a job, and wait for it.
+  async function runJob(action, urls) {
+    const Q = 'llms queue', id = 'b' + Date.now().toString(36);
+    await api('/values/' + enc(a1(Q, 'A:J')) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [[id, new Date().toISOString(), userName(), 'builder', action, urls, 'Waiting', '', '', '']] }) })
+      .catch(e => { throw new Error(/Unable to parse range/i.test(e.message) ? 'the sheet has no “llms queue” tab yet. Add the Apps Script and run llmsSetup (see the llms.txt tab).' : e.message); });
+    const started = Date.now();
+    for (;;) {
+      await new Promise(r => setTimeout(r, 4000));
+      if (!S.open) return null;
+      const r = await api('/values/' + enc(a1(Q, 'A:J')));
+      const row = (r.values || []).find(x => x[0] === id);
+      if (row && row[6] === 'Failed') throw new Error((JSON.parse(row[9] || '{}').error) || 'the script failed');
+      if (row && row[6] === 'Done') { const res = JSON.parse(row[9] || '{}'); if (res.error) throw new Error(res.error); return res; }
+      if (Date.now() - started > 4 * 60000) throw new Error('the sheet’s script hasn’t picked it up after 4 minutes. Check its every-minute timer (run llmsSetup again), and that the Apps Script is the latest version.');
+    }
+  }
+
+  // "builder urls" tab: Site | URL | Last modified | Found at, written by the Apps Script.
+  async function loadFound() {
+    try {
+      const r = await api('/values/' + enc(a1('builder urls', 'A:D')));
+      S.found = (r.values || []).slice(1).filter(x => x[1]).map(x => ({ site: x[0], url: x[1], mod: x[2] || '', at: x[3] || '' }));
+    } catch (e) { S.found = []; }
+  }
+  const norm = u => String(u || '').trim().replace(/#.*$/, '').replace(/^(https?:\/\/[^/]+)/i, m => m.toLowerCase()).replace(/\/+$/, '');
+  function notTracked(site) {
+    const have = new Set(((app().allPages && app().allPages()) || []).map(p => norm(p.url)));
+    return S.found.filter(f => hostKey(f.site) === hostKey(site) && !have.has(norm(f.url)))
+      .sort((a, b) => String(b.mod).localeCompare(String(a.mod)) || a.url.localeCompare(b.url));
+  }
+  async function findUrls() {
+    if (!S.findSite) return;
+    S.findBusy = true; S.msg = ''; draw();
+    try {
+      const res = await runJob('find-urls', S.findSite);
+      if (!res) return;
+      await loadFound();
+      S.msg = 'Found ' + res.count + ' page' + (res.count === 1 ? '' : 's') + ' in the sitemap' + (res.capped ? ' (stopped at 5,000)' : '') + '.';
+    } catch (e) { S.msg = 'Couldn’t read the sitemap: ' + e.message; }
+    S.findBusy = false; draw();
+  }
+
+  function foundSection() {
+    const sites = S.sites.map(s => s.site);
+    if (!S.findSite && sites.length) S.findSite = sites[0];
+    const list = S.findSite ? notTracked(S.findSite) : [];
+    const q = S.findFilter.trim().toLowerCase();
+    const shown = q ? list.filter(f => f.url.toLowerCase().indexOf(q) > -1) : list;
+    const max = 25 + S.findMore;
+    const at = (S.found.find(f => hostKey(f.site) === hostKey(S.findSite)) || {}).at;
+    const date = s => { const d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); };
+    let h = '<details class="bd-sec" open><summary><span><b>Pages not in the tracker yet</b><span class="bd-s">From the site’s sitemap, most recently changed first</span></span></summary><div class="bd-sec-b">';
+    if (!sites.length) return h + '<p class="bd-hint">Set up a site first: enter a page address below and save its site settings.</p></div></details>';
+    h += '<div class="bd-row"><label class="bd-inline">Site<select id="bd-fsite">' + sites.map(s => '<option' + (s === S.findSite ? ' selected' : '') + '>' + esc(s) + '</option>').join('') + '</select></label>' +
+      '<button type="button" class="mini primary" data-bd="find"' + (S.findBusy ? ' disabled' : '') + '>' + (S.findBusy ? 'Reading the sitemap…' : at ? 'Check the sitemap again' : 'Find new pages') + '</button></div>' +
+      '<p class="bd-hint">' + (S.findBusy ? 'Google reads the sitemap through the sheet’s script. This can take up to a minute.' : at ? 'Sitemap last read ' + esc(date(at)) + '. ' + list.length + ' page' + (list.length === 1 ? '' : 's') + ' not in this tab.' : 'Not read yet.') + '</p>';
+    if (list.length) {
+      h += '<label class="bd-inline">Filter<input type="text" id="bd-ffilter" value="' + esc(S.findFilter) + '" placeholder="Part of the address, e.g. /services/"></label>' +
+        '<ul class="bd-found">' + shown.slice(0, max).map(f => {
+          let path = f.url; try { path = new URL(f.url).pathname; } catch (e) { /* keep */ }
+          return '<li><span class="bd-fp" title="' + esc(f.url) + '">' + esc(path) + '</span><span class="bd-fd">' + esc(f.mod ? date(f.mod) : '') + '</span>' +
+            '<button type="button" class="mini" data-bd="pick-url" data-url="' + esc(f.url) + '">Build schema</button></li>';
+        }).join('') + '</ul>' +
+        (shown.length > max ? '<button type="button" class="mini" data-bd="find-more">Show ' + Math.min(50, shown.length - max) + ' more of ' + (shown.length - max) + '</button>' : '');
+    }
+    return h + '</div></details>';
+  }
+
   // Ask the sheet's Apps Script (the llms.txt queue) to fetch the page.
   async function readLive() {
-    const Q = 'llms queue', id = 'b' + Date.now().toString(36);
     S.liveBusy = true; S.msg = ''; draw();
     try {
-      await api('/values/' + enc(a1(Q, 'A:J')) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: [[id, new Date().toISOString(), userName(), 'builder', 'page-read', S.url, 'Waiting', '', '', '']] }) })
-        .catch(e => { throw new Error(/Unable to parse range/i.test(e.message) ? 'the sheet has no “llms queue” tab yet. Add the Apps Script and run llmsSetup (see the llms.txt tab).' : e.message); });
-      const started = Date.now();
-      let res = null;
-      while (!res) {
-        await new Promise(r => setTimeout(r, 4000));
-        if (!S.open) return;
-        const r = await api('/values/' + enc(a1(Q, 'A:J')));
-        const row = (r.values || []).find(x => x[0] === id);
-        if (row && (row[6] === 'Done' || row[6] === 'Failed')) res = JSON.parse(row[9] || '{}');
-        else if (Date.now() - started > 4 * 60000) throw new Error('the sheet’s script hasn’t picked it up after 4 minutes. Check its every-minute timer (run llmsSetup again).');
-      }
-      if (res.error) throw new Error(res.error);
+      const res = await runJob('page-read', S.url);
+      if (!res) return;
       let bad = 0;
       const blocks = (res.ld || []).map(t => { const p = D.parse(t); if (p.error || p.empty) { bad++; return null; } return p.value; }).filter(Boolean);
       const schema = !blocks.length ? null : blocks.length === 1 ? blocks[0] : blocks;
@@ -506,6 +564,7 @@
     else if (t.id === 'bd-trail') { S.trail = t.value; refreshOut(); }
     else if (t.id === 'bd-out') { S.out = t.value; if (!S.manual) { S.manual = true; } const c = $('bd-count'); if (c) c.textContent = countText(leftovers(S.out), examples(S.out)); }
     else if (t.id === 'bd-title') S.newTitle = t.value;
+    else if (t.id === 'bd-ffilter') { S.findFilter = t.value; S.findMore = 0; const pos = t.selectionStart; draw(); const n = $('bd-ffilter'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }
   }
 
   async function onChange(e) {
@@ -516,6 +575,7 @@
     } else if (t.id === 'bd-crumbs') { S.crumbsOn = t.checked; refreshOut(); draw(); }
     else if (t.id === 'bd-wrap') { S.wrap = t.checked; if (S.manual) { const json = S.out.replace(/^\s*<script[^>]*>\s*|\s*<\/script>\s*$/gi, ''); S.out = S.wrap ? '<script type="application/ld+json">\n' + json + '\n</script>' : json; } refreshOut(); draw(); }
     else if (t.id === 'bd-status') S.newStatus = t.value;
+    else if (t.id === 'bd-fsite') { S.findSite = t.value; S.findFilter = ''; S.findMore = 0; draw(); }
     else if (t.id === 'bd-url') {
       S.url = t.value.trim(); S.base = originOf(S.url); S.prefill = {};
       if (S.base) { await pickSite(); }
@@ -547,6 +607,14 @@
     else if (act === 'rebuild') { S.manual = false; S.out = build(); draw(); }
     else if (act === 'diff') { S.showDiff = !S.showDiff; draw(); }
     else if (act === 'live') readLive();
+    else if (act === 'find') findUrls();
+    else if (act === 'find-more') { S.findMore += 50; draw(); }
+    else if (act === 'pick-url') {
+      S.url = t.dataset.url; S.base = originOf(S.url); S.prefill = {}; S.vals = {}; S.live = null; S.fillSchema = null; S.msg = '';
+      S.loading = true; draw();
+      try { await pickSite(); } catch (er) { S.err = er.message; }
+      S.loading = false; draw(); panel().querySelector('.bd-body').scrollTop = 0;
+    }
     else if (act === 'live-diff') { S.showLiveDiff = !S.showLiveDiff; draw(); }
     else if (act === 'copy') { try { await navigator.clipboard.writeText(S.out); S.msg = 'Copied the JSON-LD.'; } catch (er) { S.msg = 'Couldn’t copy. Select the text and copy it by hand.'; } draw(); }
     else if (act === 'save-site') {

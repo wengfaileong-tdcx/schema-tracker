@@ -1441,6 +1441,7 @@
   // without a page reload, and report its connection state into the header.
   window.SchemaApp = {
     getPage: url => DATA.pages.find(p => p.url === url) || null,
+    allPages: () => DATA.pages,
     ordered: ordered,
     setData: function (data, source) { DATA = data || { pages: [] }; SOURCE = source || 'sample'; renderAll(); },
     // state: 'idle' | 'busy' | 'ok' | 'error'
