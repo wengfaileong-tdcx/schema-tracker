@@ -148,6 +148,10 @@ function llmsSetJob_(job, status, progress, result) {
 function llmsRun_(job, started) {
   var props = PropertiesService.getScriptProperties(), key = 'llms-job-' + job.id;
   try {
+    if (job.action === 'page-read') {
+      llmsSetJob_(job, 'Done', '', llmsReadPage_(job.urls.trim()));
+      return true;
+    }
     var site = llmsSites_().filter(function (s) { return s.id === job.site; })[0];
     if (!site) throw new Error('No site "' + job.site + '" in the "llms sites" tab.');
     var urls = job.urls.split(/[\s,]+/).filter(Boolean);
@@ -288,6 +292,39 @@ function llmsFetchMany_(site, urls, robots) {
       else { o.md = x.md; o.title = LlmsCore.shortTitle(x.title, site.name) || x.h1 || o.u; o.description = x.description; }
     }
   });
+  return out;
+}
+
+/* ---------- schema builder: read one live page ---------- */
+
+// For the dashboard's schema builder ("Fill from the live page"): the page's
+// JSON-LD blocks, title, description and language, as the site serves them.
+// Same rules as fetching for llms.txt: robots.txt is respected and bot
+// protection is never bypassed.
+function llmsReadPage_(url) {
+  var u = LlmsCore.normUrl(url);
+  if (!u) return { action: 'page-read', url: url, error: 'Not a page address.' };
+  var robots = llmsGet_(u.replace(/^(https?:\/\/[^\/]+).*$/, '$1') + '/robots.txt');
+  if (robots.status === 200 && !LlmsCore.robotsAllow(LlmsCore.robotsRules(robots.body, 'schematrackerbot'), u))
+    return { action: 'page-read', url: url, error: 'robots.txt asks crawlers not to visit this page.' };
+  var r = llmsGet_(url);
+  if (r.error) return { action: 'page-read', url: url, error: 'Couldn’t reach the page: ' + r.error };
+  if (LlmsCore.looksBlocked(r.status, r.body)) return { action: 'page-read', url: url, error: 'Blocked by bot protection (e.g. Cloudflare). Not bypassed. Use a saved copy of the page instead.' };
+  if (r.status !== 200) return { action: 'page-read', url: url, error: 'HTTP ' + r.status };
+  var html = r.body, ld = [], m, re = /<script[^>]*type\s*=\s*["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi;
+  while ((m = re.exec(html))) ld.push(m[1].trim());
+  var attr = function (tagRe, name) { var t = html.match(tagRe); if (!t) return ''; var a = t[0].match(new RegExp(name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\')', 'i')); return a ? (a[2] || a[3] || '') : ''; };
+  var unesc = function (s) { return String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim(); };
+  var title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
+  var out = {
+    action: 'page-read', url: url,
+    title: unesc(title.replace(/\s+/g, ' ')),
+    description: unesc(attr(/<meta[^>]+name\s*=\s*["']description["'][^>]*>/i, 'content')),
+    lang: unesc(attr(/<html[^>]*>/i, 'lang')),
+    ld: ld
+  };
+  // The Result cell holds about 49,000 characters; keep whole blocks only.
+  while (JSON.stringify(out).length > 45000 && out.ld.length) { out.ld.pop(); out.trimmed = true; }
   return out;
 }
 

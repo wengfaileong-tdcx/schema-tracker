@@ -33,7 +33,7 @@
   const S = {
     connected: false, loading: false, err: '', missing: false, index: null, rules: null, bv: {}, gens: {},
     sites: [], open: false, url: '', page: null, base: '', typeIdx: -1, vals: {}, prefill: {}, crumbsOn: false,
-    trail: '', wrap: false, out: '', manual: false, showDiff: false, msg: '', busy: false, newStatus: 'Draft', newTitle: ''
+    trail: '', wrap: false, live: null, liveBusy: false, showLiveDiff: false, fillSchema: null, out: '', manual: false, showDiff: false, msg: '', busy: false, newStatus: 'Draft', newTitle: ''
   };
   const app = () => window.SchemaApp || {};
   const api = (p, o) => app().sheet.api(p, o);
@@ -198,7 +198,7 @@
     let txt = x.tp.json.split(tplUrl).join(S.url).split(TPL_SITE).join(S.base);
     const obj = JSON.parse(txt);
     const fields = [], seen = {};
-    const curNodes = flat(S.curSchema);
+    const curNodes = flat(S.fillSchema || S.curSchema);
     // top: the @type of the graph node a value sits in; path: the keys from that node down.
     (function walk(v, top, path) {
       if (Array.isArray(v)) return v.forEach((y, i) => walk(y, top, top ? path.concat(i) : path));
@@ -220,6 +220,7 @@
     S.tpl = obj; S.fields = fields;
     S.hasCrumbs = g0.some(n => typeOf(n) === 'BreadcrumbList');
     const curCrumbs = curNodes.find(n => typeOf(n) === 'BreadcrumbList');
+    S.preFrom = S.fillSchema ? 'From the live page' : 'From the latest version';
     S.crumbsOn = S.hasCrumbs && !!curCrumbs;
     S.trail = curCrumbs && Array.isArray(curCrumbs.itemListElement)
       ? curCrumbs.itemListElement.map(i => i.name || (i.item && i.item.name) || '').join(' > ')
@@ -292,7 +293,7 @@
 
   async function openFor(url) {
     const A = app();
-    S.open = true; S.err = ''; S.msg = ''; S.vals = {}; S.prefill = {}; S.showDiff = false; S.types = null; S.typeIdx = -1;
+    S.open = true; S.err = ''; S.msg = ''; S.vals = {}; S.prefill = {}; S.showDiff = false; S.live = null; S.fillSchema = null; S.showLiveDiff = false; S.types = null; S.typeIdx = -1;
     S.page = url ? (A.getPage && A.getPage(url)) : null;
     S.url = url || ''; S.newTitle = '';
     const cur = S.page ? A.ordered(S.page)[0] : null;
@@ -386,11 +387,15 @@
     h += '<div class="bd-grid2"><label>Page type<select id="bd-type">' + S.types.map((y, i) =>
       '<option value="' + i + '"' + (i === S.typeIdx ? ' selected' : '') + '>' + esc(y.r.page + ' · ' + y.r.need) + '</option>').join('') + '</select></label>' +
       '<label class="bd-file">Fill from a saved page (.html)<input type="file" accept=".html,.htm,text/html" data-bd="html-file"></label></div>' +
+      '<div class="bd-row"><button type="button" class="mini" data-bd="live"' + (S.liveBusy || !/^https?:\/\//.test(S.url) ? ' disabled' : '') + '>' +
+      (S.liveBusy ? 'Fetching the live page…' : S.live ? 'Fetch the live page again' : 'Fill from the live page') + '</button>' +
+      '<span class="bd-hint">' + (S.liveBusy ? 'Google fetches it through the sheet’s script. This can take up to a minute.' : 'Reads the schema, title and description the website shows right now.') + '</span></div>' +
+      liveNote() +
       '<p class="bd-hint">Schema Flow: <b>' + esc(x.r.schema || '') + '</b>' + (x.r.note ? ' · ' + esc(x.r.note) : '') + '</p>';
     // fields
     h += '<details class="bd-sec" open><summary><span><b>Fill in</b><span class="bd-s">' + S.fields.length + ' value' + (S.fields.length === 1 ? '' : 's') + ' from the template</span></span></summary><div class="bd-sec-b">';
     h += S.fields.length ? S.fields.map(f => {
-      const v = valueOf(f.key), from = S.vals[f.key] != null ? '' : f.site && site && site.vals[f.key] ? 'From site settings' : S.prefill[f.key] ? 'From the saved page' : f.pre ? 'From the latest version' : '';
+      const v = valueOf(f.key), from = S.vals[f.key] != null ? '' : f.site && site && site.vals[f.key] ? 'From site settings' : S.prefill[f.key] ? S.prefillFrom : f.pre ? S.preFrom : '';
       const long = /description|answer|text/.test(f.key);
       return '<label><span class="bd-lab">' + esc(human(f.key)) + (f.site ? ' <span class="bd-chip">Whole site</span>' : '') + '</span>' +
         (long ? '<textarea rows="3" data-key="' + esc(f.key) + '" placeholder="' + esc(f.hint ? 'e.g. ' + f.hint : '') + '">' + esc(v) + '</textarea>'
@@ -426,6 +431,64 @@
       '<p class="bd-hint">Saving writes to the Google Sheet only, as ' + (isNew ? 'a new row' : sameDay ? 'today’s version (it already exists, so it is updated)' : 'today’s version') + '. Nothing goes to the website.</p>';
     return h;
   }
+  // How the live page compares with the sheet's latest version.
+  function liveNote() {
+    if (!S.live) return '';
+    const L = S.live;
+    if (!L.schema) return '<p class="bd-note">The live page has no JSON-LD' + (L.badBlocks ? ' that parses (' + L.badBlocks + ' broken block' + (L.badBlocks > 1 ? 's' : '') + ')' : '') + '. Title and description were filled in from it.</p>';
+    if (!S.curSchema) return '<p class="bd-msg">Filled in from the live page’s schema' + (L.badBlocks ? ' (' + L.badBlocks + ' broken block skipped)' : '') + '.</p>';
+    const same = D.pretty(L.schema, true) === D.pretty(S.curSchema, true);
+    let h = '<div class="' + (same ? 'bd-msg' : 'bd-warn') + '"><span>' + (same
+      ? 'The live page’s schema is the same as the sheet’s latest version (' + esc(S.cur.version) + ').'
+      : 'The live page’s schema is different from the sheet’s latest version (' + esc(S.cur.version) + '). The fields now use the live page.') +
+      (L.trimmed ? ' Some blocks were too long to read.' : '') + '</span>' +
+      (same ? '' : '<button type="button" class="mini" data-bd="live-diff" aria-pressed="' + S.showLiveDiff + '">' + (S.showLiveDiff ? 'Hide the difference' : 'Show the difference') + '</button>') + '</div>';
+    if (!same && S.showLiveDiff) {
+      const d = D.compare(S.curSchema, L.schema, { sort: true, context: 3, labels: { left: 'Sheet (' + S.cur.version + ')', right: 'Live page' } });
+      h += '<div class="bd-diff">' + (d.error ? '<p class="bd-err">' + esc(d.error) + '</p>' : d.html) + '</div>';
+    }
+    return h;
+  }
+
+  // Ask the sheet's Apps Script (the llms.txt queue) to fetch the page.
+  async function readLive() {
+    const Q = 'llms queue', id = 'b' + Date.now().toString(36);
+    S.liveBusy = true; S.msg = ''; draw();
+    try {
+      await api('/values/' + enc(a1(Q, 'A:J')) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [[id, new Date().toISOString(), userName(), 'builder', 'page-read', S.url, 'Waiting', '', '', '']] }) })
+        .catch(e => { throw new Error(/Unable to parse range/i.test(e.message) ? 'the sheet has no “llms queue” tab yet. Add the Apps Script and run llmsSetup (see the llms.txt tab).' : e.message); });
+      const started = Date.now();
+      let res = null;
+      while (!res) {
+        await new Promise(r => setTimeout(r, 4000));
+        if (!S.open) return;
+        const r = await api('/values/' + enc(a1(Q, 'A:J')));
+        const row = (r.values || []).find(x => x[0] === id);
+        if (row && (row[6] === 'Done' || row[6] === 'Failed')) res = JSON.parse(row[9] || '{}');
+        else if (Date.now() - started > 4 * 60000) throw new Error('the sheet’s script hasn’t picked it up after 4 minutes. Check its every-minute timer (run llmsSetup again).');
+      }
+      if (res.error) throw new Error(res.error);
+      let bad = 0;
+      const blocks = (res.ld || []).map(t => { const p = D.parse(t); if (p.error || p.empty) { bad++; return null; } return p.value; }).filter(Boolean);
+      const schema = !blocks.length ? null : blocks.length === 1 ? blocks[0] : blocks;
+      S.live = { schema: schema, badBlocks: bad, trimmed: !!res.trimmed };
+      S.prefill = {};
+      if (res.title) S.prefill.page_title = res.title;
+      if (res.description) S.prefill.page_description = res.description;
+      if (res.lang) S.prefill.page_language = res.lang;
+      S.prefillFrom = 'From the live page';
+      ['page_title', 'page_description', 'page_language'].forEach(k => { if (S.prefill[k]) delete S.vals[k]; });
+      if (schema) S.fillSchema = schema;
+      if (S.types && S.types.length) {
+        if (!S.page && schema) S.typeIdx = guessType(S.types, S.url, schema);
+        prepare(); S.out = build();
+      }
+    } catch (e) { S.msg = 'Couldn’t read the live page: ' + e.message; }
+    S.liveBusy = false; draw();
+  }
+
   const countText = (left, ex) => (left ? left + ' placeholder' + (left > 1 ? 's' : '') + ' left' : 'No placeholders left') +
     (ex ? ' · ' + ex + ' example value' + (ex > 1 ? 's' : '') + ' to check' : '');
 
@@ -468,6 +531,7 @@
       const meta = n => ((doc.querySelector('meta[name="' + n + '"]') || doc.querySelector('meta[property="og:' + n + '"]') || {}).content || '').trim();
       const title = (doc.querySelector('title') || {}).textContent || '';
       S.prefill = { page_title: title.trim(), page_description: meta('description'), page_language: (doc.documentElement.getAttribute('lang') || '').trim() };
+      S.prefillFrom = 'From the saved page';
       Object.keys(S.prefill).forEach(k => { if (!S.prefill[k]) delete S.prefill[k]; else delete S.vals[k]; });
       S.out = build(); S.manual = false; draw();
       S.msg = 'Filled in from ' + t.files[0].name + ': ' + Object.keys(S.prefill).map(human).join(', ') + '.';
@@ -482,6 +546,8 @@
     if (act === 'close') close();
     else if (act === 'rebuild') { S.manual = false; S.out = build(); draw(); }
     else if (act === 'diff') { S.showDiff = !S.showDiff; draw(); }
+    else if (act === 'live') readLive();
+    else if (act === 'live-diff') { S.showLiveDiff = !S.showLiveDiff; draw(); }
     else if (act === 'copy') { try { await navigator.clipboard.writeText(S.out); S.msg = 'Copied the JSON-LD.'; } catch (er) { S.msg = 'Couldn’t copy. Select the text and copy it by hand.'; } draw(); }
     else if (act === 'save-site') {
       const base = S.base || originOf(($('bd-base') || {}).value || '');
