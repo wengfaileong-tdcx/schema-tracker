@@ -358,6 +358,7 @@
   // they stay with that change.
   const textKey = s => { let h = 0; s = String(s || '').trim(); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return 'r' + (h >>> 0).toString(36); };
   const reviewId = f => f + ' review';
+  const cmLabel = n => n ? n + ' comment' + (n > 1 ? 's' : '') + ' on this change' : 'Comment on this change';
   function reviewComments(fname, c) {
     const diffId = reviewId(fname), key = textKey(c.theirs);
     const list = (((S.comments[fileUrl(fname)] || {})[diffId]) || {})[key] || [];
@@ -366,7 +367,7 @@
     return '<div class="lx-conf-cm" data-cm-url="' + esc(fileUrl(fname)) + '"><div class="row lx-conf-row">' +
       '<span class="cell" style="display:none"><span class="tx">' + esc(c.theirs || '') + '</span></span>' +
       '<span class="cmcell">' + D.commentButton(diffId, key, open, list.length) + '</span>' +
-      '<span class="lx-conf-cml">' + (list.length ? list.length + ' comment' + (list.length > 1 ? 's' : '') + ' on this change' : 'Comment on this change') + '</span></div>' +
+      '<button type="button" class="lx-conf-cml" data-n="' + list.length + '">' + cmLabel(list.length) + '</button></div>' +
       (list.length ? D.commentPanel(diffId, key, list, canPost) : '') + '</div>';
   }
 
@@ -805,6 +806,36 @@
       const btn = ta.closest('.lx-conf-i').querySelector('[data-lx="pick"]');
       if (btn) btn.textContent = 'Use mine instead';
     });
+    // Highlight part of a "New from the pages" box, then press 💬 to quote it.
+    const confSel = ta => ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+    const markConf = e => {
+      const ta = e.target.closest && e.target.closest('.lx-conf-ta');
+      if (!ta) return;
+      const row = ta.parentElement.querySelector('.lx-conf-row'), l = row && row.querySelector('.lx-conf-cml');
+      if (!row) return;
+      const hit = !!confSel(ta);
+      row.classList.toggle('sel-hit', hit);
+      l.textContent = hit ? 'Comment on the highlighted text' : cmLabel(+l.dataset.n || 0);
+    };
+    host.addEventListener('mouseup', e => setTimeout(() => markConf(e), 0));
+    host.addEventListener('keyup', markConf);
+    host.addEventListener('click', e => {
+      const lab = e.target.closest('.lx-conf-cml');
+      if (lab) { lab.parentElement.querySelector('.ln-cm-btn').click(); return; }
+      const btn = e.target.closest('.lx-conf-cm .ln-cm-btn');
+      if (!btn) return;
+      const ta = btn.closest('.lx-conf-cm').parentElement.querySelector('.lx-conf-ta'), snip = ta ? confSel(ta) : '';
+      // app.js opens the panel on this same click; fill in the quote after it.
+      setTimeout(() => {
+        const panel = btn.closest('.row').nextElementSibling;
+        if (!snip || !panel || !panel.classList.contains('ln-cm-panel')) return;
+        panel.hidden = false;
+        panel.dataset.snippet = snip;
+        const q = panel.querySelector('.ln-cm-quote');
+        if (q) { q.textContent = snip; panel.querySelector('.cm-on').hidden = false; }
+        const body = panel.querySelector('.cm-body'); if (body) body.focus();
+      }, 0);
+    });
     host.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.target.id === 'lx-add') { e.preventDefault(); host.querySelector('[data-lx="add"]').click(); }
       if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('lx-drop')) { e.preventDefault(); $('lx-file').click(); }
@@ -823,7 +854,7 @@
       addComment(d.url, d.diffId, d.lineKey, d.comment);
       const lbl = document.querySelector('.lx-conf-cm .ln-cm-panel[data-line-key="' + d.lineKey + '"]');
       const row = lbl && lbl.previousElementSibling, l = row && row.querySelector('.lx-conf-cml');
-      if (l) { const n = lbl.querySelectorAll('.cm-item').length; l.textContent = n + ' comment' + (n > 1 ? 's' : '') + ' on this change'; }
+      if (l) { const n = lbl.querySelectorAll('.cm-item').length; l.dataset.n = n; if (!row.classList.contains('sel-hit')) l.textContent = cmLabel(n); }
     });
     document.addEventListener('sheet-connected', () => {
       S.connected = true; S.started = !$('llms').hidden;

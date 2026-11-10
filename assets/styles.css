@@ -530,5 +530,8 @@ button.lx-tog::before{content:"▸";color:var(--muted);font-size:11px;width:10px
 .lx-conf-row{align-items:center;gap:4px;color:var(--ink)}
 .lx-conf-row .cmcell{flex:0 0 auto;border:0;background:none}
 .lx-conf-row .ln-cm-btn{visibility:visible}
-.lx-conf-cml{font-size:12px;color:var(--muted)}
+.lx-conf-cml{font-size:12px;color:var(--muted);border:0;background:none;padding:2px 4px;cursor:pointer;font-family:var(--sans);border-radius:4px}
+.lx-conf-cml:hover{color:var(--ink);text-decoration:underline}
+.lx-conf-row.sel-hit{background:none}
+.lx-conf-row.sel-hit .lx-conf-cml{color:var(--focus);font-weight:600}
 .lx-conf-cm .ln-cm-panel{border:1px solid var(--rule);border-radius:6px;margin-top:4px;color:var(--ink)}
