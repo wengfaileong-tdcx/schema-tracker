@@ -304,7 +304,7 @@ After **Save as my version**, llms-full.txt follows your file **page by page**, 
 - a page you rewrote is listed as **changed on the site**, with what changed on the website, your section and the new text side by side; your section stays until you pick or type the new one;
 - a new page is added once, in your format (`URL:` if your file uses it), next to your pages from the same part of the site (e.g. a new `/blog/` post after your other blog posts);
 - pages that are in your file but no longer tracked, or that appear twice, are listed; nothing is deleted for you;
-- pages the tool already had when you saved, but that aren’t in your file, are listed under **On the website but not in your version**, each with **Add to my version** (you may have left them out on purpose, so they are never added silently).
+- pages the tool already had when you saved, but that aren’t in your file, are listed under **On the website but not in your version**, each with **Add to my version** or **Keep out** (you may have left them out on purpose, so they are never added silently). **Keep out** is saved in the “llms files” tab for everyone and stops the page being offered or added; undo it under “kept out of your version” → **Offer again**.
 
 To use a file you wrote elsewhere: **Edit** → **Load from a file** (.txt or .md) → **Save as my version**.
 

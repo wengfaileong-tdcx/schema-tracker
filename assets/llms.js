@@ -125,10 +125,17 @@
       S.versions = Object.values(by).map(v => {
         const join = kind => (v.parts[kind] || []).sort((a, b) => a[0] - b[0]).map(p => p[1]).join('');
         return { site: v.site, file: v.file, version: v.version, savedAt: v.savedAt, by: v.by,
-          reset: !!v.parts.reset, export: !!v.parts.export && !v.parts.mine, mine: join('mine'), base: join('base'), text: join('export') };
+          reset: !!v.parts.reset, export: !!v.parts.export && !v.parts.mine, mine: join('mine'), base: join('base'), text: join('export'),
+          skip: v.parts.skip ? join('skip') : null };
       }).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
       S.exports = S.versions.filter(v => v.export);
-      S.versions = S.versions.filter(v => !v.export);
+      // "Keep out" lists: the newest one per site and file wins.
+      S.skips = {};
+      S.versions.filter(v => v.skip != null).forEach(v => {
+        const k = v.site + '|' + v.file;
+        if (!S.skips[k]) { try { S.skips[k] = JSON.parse(v.skip || '[]'); } catch (e) { S.skips[k] = []; } }
+      });
+      S.versions = S.versions.filter(v => !v.export && v.skip == null);
     } catch (e) { S.filesTab = false; S.versions = []; }
     S.comments = {};
     if (!CM_TAB) return;
@@ -304,6 +311,16 @@
     S.job = null;
     await loadExtras(); draw();
   }
+  // Pages you don't want in your version: not offered again until you undo it.
+  async function setKeepOut(fname, urls, out) {
+    const k = S.siteId + '|' + fname, cur = new Set(S.skips[k] || []);
+    urls.forEach(u => { if (out) cur.add(u); else cur.delete(u); });
+    S.job = { label: out ? 'Keep out' : 'Offer again', status: 'Saving', progress: '' }; S.error = ''; draw();
+    try { await writeFileRows(fname, 'k' + Date.now().toString(36), { skip: JSON.stringify([...cur]) }); toast(out ? 'Kept out. It won’t be offered again.' : 'It will be offered again.'); }
+    catch (e) { S.error = 'Couldn’t save that: ' + e.message; }
+    S.job = null;
+    await loadExtras(); draw();
+  }
   async function resetVersion(fname) {
     S.job = { label: 'Use generated ' + fname, status: 'Saving', progress: '' }; draw();
     try { await writeFileRows(fname, 'r' + Date.now().toString(36), { reset: '' }); toast(fname + ' follows the pages again'); }
@@ -376,7 +393,7 @@
     if (!v) return { text: gen, mode: 'generated', conflicts: [], applied: 0 };
     // llms-full.txt follows your file page by page (matched on each section's URL),
     // so a hand-written file in its own format never gets pages twice.
-    const F = f === 'llms-full.txt' ? C.followFull(v.base, v.mine, gen, (S.choices[S.siteId + '|' + f] || {})._add) : null;
+    const F = f === 'llms-full.txt' ? C.followFull(v.base, v.mine, gen, (S.choices[S.siteId + '|' + f] || {})._add, (S.skips || {})[S.siteId + '|' + f]) : null;
     if (!F && v.base === gen) return { text: v.mine, mode: 'mine', conflicts: [], applied: 0, v: v };
     const r = F ? { text: F.text, conflicts: F.conflicts, applied: F.updated.length } : C.merge3(v.base, v.mine, gen);
     const pick = S.choices[S.siteId + '|' + f] || {};
@@ -389,7 +406,7 @@
     });
     const changed = r.applied || r.conflicts.length || (F && (F.added.length || F.missing.length || F.text !== v.mine));
     return { text: lines.join('\n'), mode: changed ? 'merged' : 'mine', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick,
-      sections: !!F, added: F ? F.added : [], missing: F ? F.missing : [], removed: F ? F.removed : [], dupes: F ? F.dupes : [] };
+      sections: !!F, added: F ? F.added : [], missing: F ? F.missing : [], kept: F ? F.kept : [], removed: F ? F.removed : [], dupes: F ? F.dupes : [] };
   }
 
   // Comments on one "New from the pages" box: stored in the Line Comments tab
@@ -505,13 +522,16 @@
           '<button type="button" data-lx="cancel-edit">Cancel</button></div></div>';
       } else if (shown) {
         let conf = '';
-        if (o.sections && (o.added.length || o.missing.length || o.removed.length || o.dupes.length)) {
+        if (o.sections && (o.added.length || o.missing.length || o.kept.length || o.removed.length || o.dupes.length)) {
           const li = x => '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url || x)) + '</span></li>';
           conf += '<div class="lx-fnotes">' +
             (o.added.length ? '<p><b>Added in your format</b> (new pages, placed next to pages from the same part of the site):</p><ul>' + o.added.map(li).join('') + '</ul>' : '') +
             (o.missing.length ? '<p><b>On the website but not in your version</b>. Add the ones you want; the rest stay out:</p><ul>' + o.missing.map(x =>
-              '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url)) + '</span> <button type="button" class="mini" data-lx="add-page" data-file="' + fname + '" data-url="' + esc(x.url) + '">Add to my version</button></li>').join('') + '</ul>' +
+              '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url)) + '</span> <button type="button" class="mini" data-lx="add-page" data-file="' + fname + '" data-url="' + esc(x.url) + '">Add to my version</button>' +
+              ' <button type="button" class="mini" data-lx="keep-out" data-file="' + fname + '" data-url="' + esc(x.url) + '"' + (b ? ' disabled' : '') + '>Keep out</button></li>').join('') + '</ul>' +
               (o.missing.length > 1 ? '<button type="button" class="mini" data-lx="add-page" data-file="' + fname + '" data-url="*">Add all ' + o.missing.length + '</button>' : '') : '') +
+            (o.kept.length ? '<details class="lx-kept"><summary>' + o.kept.length + ' page' + (o.kept.length > 1 ? 's' : '') + ' kept out of your version</summary><ul>' + o.kept.map(x =>
+              '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url)) + '</span> <button type="button" class="mini" data-lx="unkeep" data-file="' + fname + '" data-url="' + esc(x.url) + '"' + (b ? ' disabled' : '') + '>Offer again</button></li>').join('') + '</ul></details>' : '') +
             (o.removed.length ? '<p><b>In your version but no longer tracked</b>. They stay in your file; remove them with Edit if the pages are gone:</p><ul>' + o.removed.map(li).join('') + '</ul>' : '') +
             (o.dupes.length ? '<p><b>In your version more than once</b>. Remove the extra copy with Edit:</p><ul>' + o.dupes.map(u => li({ url: u })).join('') + '</ul>' : '') + '</div>';
         }
@@ -848,6 +868,8 @@
       if (!window.confirm('Stop following your version of ' + file + '? It will be generated from the pages again. Your version stays in the “llms files” tab.')) return;
       resetVersion(file);
     }
+    else if (act === 'keep-out') setKeepOut(file, [url], true);
+    else if (act === 'unkeep') setKeepOut(file, [url], false);
     else if (act === 'add-page') {
       const k = S.siteId + '|' + file, p = S.choices[k] || (S.choices[k] = {}), add = p._add || (p._add = {});
       (url === '*' ? output(file).missing.map(x => x.url) : [url]).forEach(u => { add[u] = true; });
