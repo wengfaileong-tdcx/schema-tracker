@@ -401,17 +401,30 @@
   let currentToken = null;
   let currentTab = null;
 
+  // "live titles" tab (URL | Live title | Checked at | Problem), filled by
+  // the llms Apps Script. Missing tab = no live titles yet.
+  const fetchLiveTitles = token => fetchValues(token, 'live titles').catch(() => ({ values: [] }));
+  function attachLiveTitles(data, rows) {
+    const by = {};
+    rows.slice(1).forEach(r => { if (r[0]) by[sameUrl(r[0])] = { t: String(r[1] || '').trim(), at: r[2] || '', e: r[3] || '' }; });
+    data.pages.forEach(p => { p.liveTitle = by[sameUrl(p.url)] || null; });
+    return data;
+  }
+  let lastData = null;
+
   function loadTab(tab) {
     currentTab = tab;
     setStatus('Loading ' + tab + '…');
-    return Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken)])
-      .then(([data, faqData, lineCommentsData]) => fetchProposed(currentToken, tab, data.values || [])
-        .then(p => [data, faqData, lineCommentsData, p, null], e => [data, faqData, lineCommentsData, null, e]))
-      .then(([data, faqData, lineCommentsData, proposedData, proposedErr]) => {
-        const result = attachProposed(
+    return Promise.all([fetchValues(currentToken, tab), fetchFaqLive(currentToken), fetchLineComments(currentToken), fetchLiveTitles(currentToken)])
+      .then(([data, faqData, lineCommentsData, titles]) => fetchProposed(currentToken, tab, data.values || [])
+        .then(p => [data, faqData, lineCommentsData, titles, p, null], e => [data, faqData, lineCommentsData, titles, null, e]))
+      .then(([data, faqData, lineCommentsData, titles, proposedData, proposedErr]) => {
+        const result = attachLiveTitles(attachProposed(
           attachLineComments(attachLivePage(rowsToData(data.values || []), faqData.values || []), lineCommentsData.values || []),
-          proposedData, proposedErr);
+          proposedData, proposedErr), titles.values || []);
+        lastData = result;
         window.SchemaApp.setData(result, 'sheet');
+        document.dispatchEvent(new CustomEvent('schema-loaded', { detail: { tab: tab } }));
         $('sheet-connect').textContent = 'Reconnect';
         report('ok', 'Google Sheet connected',
           (result.site || tab) + ' · Last loaded: ' + stamp() +
@@ -450,7 +463,7 @@
       document.dispatchEvent(new CustomEvent('sheet-connected'));
       fetchTabs(currentToken)
         // llms.txt tabs belong to the llms.txt tab of the dashboard, not the schema picker.
-        .then(tabs => tabs.filter(t => !/^(llms|builder) /i.test(t)))
+        .then(tabs => tabs.filter(t => !/^(llms|builder) /i.test(t) && !/^live titles$/i.test(t)))
         .then(tabs => {
           if (!tabs.length) throw new Error('Spreadsheet has no tabs.');
           const sel = $('sheet-tab');
@@ -490,6 +503,10 @@
         .catch(err => cb(err));
     };
     window.SchemaApp.sheetTab = () => currentTab;
+    // Re-read only the live titles (after the Apps Script fetched new ones), without redrawing the list.
+    window.SchemaApp.reloadLiveTitles = () => fetchLiveTitles(currentToken).then(t => {
+      if (lastData) { attachLiveTitles(lastData, t.values || []); if (window.SchemaApp.refreshTitles) window.SchemaApp.refreshTitles(); }
+    });
     window.SchemaApp.onAddPage = function (payload, cb) {
       if (!currentToken) { cb(new Error('Not connected to Google Sheet.')); return; }
       addPage(currentToken, currentTab, payload.url, payload.title, payload.status, payload.text)

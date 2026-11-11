@@ -304,6 +304,10 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 - **Each page → History:** the page’s older text, kept in the **“llms page history”** tab (made by llmsSetup) whenever a fetch, an upload or a hand edit replaces it. Compare any older version with another or with the text now. The Apps Script keeps the newest `LLMS_HISTORY_KEEP` (10) versions per page and prunes older ones once an hour; change the number at the top of the script.
 
 
+## Live page titles (Schema tab)
+
+Each page shows the title its live page has right now, not the sheet’s Title column. The llms Apps Script fetches every page’s `<title>` (through the “llms queue” tab) into the **“live titles”** tab: automatically when a tab loads and a title is missing or older than 7 days, or when you press **Refresh live titles**. Hover a title to see where it came from and when it was checked. Pages the script can’t read (bot protection, robots.txt, errors) keep the sheet’s Title, and the hover text says why. Needs the latest `sheet-scripts/llms.gs`.
+
 ## Schema builder
 
 Each page in the Schema tab has a **Build / edit schema** button, and the toolbar has **+ New page schema**. Both open the builder panel (needs Google Sheet connected with edit access).

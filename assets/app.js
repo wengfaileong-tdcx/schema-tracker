@@ -33,6 +33,17 @@
     return Math.floor((Date.now() - d.getTime()) / 86400000);
   };
 
+  // The title the live page shows (fetched by the sheet's Apps Script into the
+  // "live titles" tab, or from the FAQ Live tab's LIVE_META); the sheet's own
+  // Title column only when there is no live title.
+  const titleOf = p => (p.liveTitle && p.liveTitle.t) || (p.liveMeta && p.liveMeta.title) || p.title || '';
+  const titleSource = p => {
+    const d = s => { const x = new Date(s); return isNaN(x) ? '' : ' (checked ' + x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ')'; };
+    if (p.liveTitle && p.liveTitle.t) return 'Live page title' + d(p.liveTitle.at) + (p.liveTitle.e ? ' · last check failed: ' + p.liveTitle.e : '');
+    if (p.liveMeta && p.liveMeta.title) return 'Live page title (FAQ Live tab)';
+    return p.title ? 'Title from the sheet (no live title yet' + (p.liveTitle && p.liveTitle.e ? ': ' + p.liveTitle.e : '') + ')' : '';
+  };
+
   // Versions newest first, whatever order they were written in.
   function ordered(page) {
     return (page.versions || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -491,6 +502,7 @@
     h += '<span class="p-num">' + (index + 1) + '</span>';
     h += '<div class="p-main">';
     h += '<div class="u">' + esc(page.url) + extLink(page.url) + '</div>';
+    h += '<div class="pt" data-title-for="' + esc(page.url) + '" title="' + esc(titleSource(page)) + '">' + esc(titleOf(page)) + '</div>';
     h += '<div class="line2">';
     h += '<span>Current version <b>' + esc(cur.version) + '</b></span>';
     h += '<span>Last updated <b>' + esc(fmt(cur.date)) + '</b></span>';
@@ -644,7 +656,7 @@
         ' data-url="' + esc(r.page.url) + '">' +
         '<button type="button" class="rf-open">' +
         '<span class="rf-n">' + (i + 1) + '</span>' +
-        '<span class="rf-t">' + esc(r.page.title || pathOf(r.page.url)) + '</span>' +
+        '<span class="rf-t" data-title-for="' + esc(r.page.url) + '" title="' + esc(titleSource(r.page)) + '">' + esc(titleOf(r.page) || pathOf(r.page.url)) + '</span>' +
         '<span class="rf-u">' + esc(pathOf(r.page.url)) + '</span>' +
         '<span class="rf-pills">' + changesPill(changeCount(r.page)) + typePills(r.cur, r.page.url, 2) + '</span>' +
         '<span class="rf-d">' + esc(fmt(r.cur.date)) + '</span>' +
@@ -713,7 +725,7 @@
 
     let pages = DATA.pages.filter(p => (p.versions || []).length);
     if (q) pages = pages.filter(p =>
-      (p.url + ' ' + (p.title || '')).toLowerCase().indexOf(q) > -1);
+      (p.url + ' ' + (p.title || '') + ' ' + titleOf(p)).toLowerCase().indexOf(q) > -1);
 
     pages = pages.slice().sort((a, b) => {
       if (order === 'url') return a.url.localeCompare(b.url);
@@ -1091,7 +1103,7 @@
     return 'Latest schema for each page' + (tab ? ' in the "' + tab + '" tab' : '') +
       ', copied ' + fmt(todayIso()) + '. ' + plural(rows.length, 'page') + '.\n' +
       'Each page shows its newest filled version, so dates can differ between pages.\n\n' +
-      rows.map(r => '=== ' + r.page.url + (r.page.title ? ' · ' + r.page.title : '') +
+      rows.map(r => '=== ' + r.page.url + (titleOf(r.page) ? ' · ' + titleOf(r.page) : '') +
         ' · version ' + r.cur.date + ' ===\n' +
         (r.cur.raw != null ? r.cur.raw : show(r.cur))).join('\n\n') + '\n';
   }
@@ -1441,6 +1453,12 @@
   // without a page reload, and report its connection state into the header.
   window.SchemaApp = {
     getPage: url => DATA.pages.find(p => p.url === url) || null,
+    refreshTitles: () => {
+      document.querySelectorAll('[data-title-for]').forEach(n => {
+        const p = DATA.pages.find(x => x.url === n.dataset.titleFor);
+        if (p) { n.textContent = titleOf(p) || (n.classList.contains('rf-t') ? pathOf(p.url) : ''); n.title = titleSource(p); }
+      });
+    },
     allPages: () => DATA.pages,
     ordered: ordered,
     setData: function (data, source) { DATA = data || { pages: [] }; SOURCE = source || 'sample'; renderAll(); },

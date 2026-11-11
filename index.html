@@ -58,8 +58,11 @@
     <div><button id="fr-open" class="btn-ghost" type="button" hidden>Find &amp; replace</button></div>
     <div><button id="copy-latest" class="btn-ghost" type="button" hidden>Copy latest schemas</button></div>
     <div><button id="bd-new" class="btn-ghost" type="button" hidden>+ New page schema</button></div>
+    <div><button id="lt-refresh" class="btn-ghost" type="button" hidden title="Fetch each page’s title from the live site">Refresh live titles</button></div>
     <span class="count" id="count"></span>
   </div>
+
+  <p id="lt-status" class="lt-status noprint" role="status" hidden></p>
 
   <section id="fr" class="fr noprint" aria-label="Find and replace across pages" hidden></section>
 
@@ -89,6 +92,7 @@
 <script src="assets/llms-core.js"></script>
 <script src="assets/llms.js"></script>
 <script src="assets/builder.js"></script>
+<script src="assets/live-titles.js"></script>
 <script src="https://accounts.google.com/gsi/client" defer></script>
 <script src="assets/sheet-loader.js" defer></script>
 </body>

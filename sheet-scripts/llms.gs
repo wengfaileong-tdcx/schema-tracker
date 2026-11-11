@@ -152,6 +152,10 @@ function llmsSetJob_(job, status, progress, result) {
 function llmsRun_(job, started) {
   var props = PropertiesService.getScriptProperties(), key = 'llms-job-' + job.id;
   try {
+    if (job.action === 'titles') {
+      llmsSetJob_(job, 'Done', '', llmsTitles_(job.urls));
+      return true;
+    }
     if (job.action === 'find-urls') {
       llmsSetJob_(job, 'Done', '', llmsFindUrls_(job.urls.trim()));
       return true;
@@ -334,6 +338,52 @@ function llmsReadPage_(url) {
   // The Result cell holds about 49,000 characters; keep whole blocks only.
   while (JSON.stringify(out).length > 45000 && out.ld.length) { out.ld.pop(); out.trimmed = true; }
   return out;
+}
+
+// For the Schema tab: each page's <title> as the live site shows it, kept in
+// the "live titles" tab (URL | Live title | Checked at | Problem). A page that
+// can't be fetched keeps its last good title. Same rules as everywhere else:
+// robots.txt is respected and bot protection is never bypassed.
+var LLMS_TITLES_TAB = 'live titles';
+function llmsUnesc_(s) {
+  return String(s || '').replace(/&#x([0-9a-f]+);/gi, function (m, h) { return String.fromCharCode(parseInt(h, 16)); })
+    .replace(/&#(\d+);/g, function (m, d) { return String.fromCharCode(+d); })
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim();
+}
+function llmsTitles_(urls) {
+  var list = String(urls || '').split(/\s+/).filter(function (u) { return /^https?:\/\//i.test(u); }).slice(0, 60);
+  var robots = {}, out = [];
+  for (var i = 0; i < list.length; i += LLMS_BATCH) {
+    var res = list.slice(i, i + LLMS_BATCH).map(function (u) { return { u: u }; });
+    res.forEach(function (r) {
+      var o = r.u.replace(/^(https?:\/\/[^\/?#]+).*$/, '$1');
+      if (!(o in robots)) { var rb = llmsGet_(o + '/robots.txt'); robots[o] = rb.status === 200 ? LlmsCore.robotsRules(rb.body, 'schematrackerbot') : []; }
+      if (!LlmsCore.robotsAllow(robots[o], r.u)) r.e = 'robots.txt asks crawlers not to visit this page';
+    });
+    var go = res.filter(function (r) { return !r.e; }), resp = [];
+    try {
+      resp = go.length ? UrlFetchApp.fetchAll(go.map(function (r) { return { url: r.u, muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': LLMS_AGENT } }; })) : [];
+    } catch (e) { go.forEach(function (r) { r.e = 'Couldn’t reach the page'; }); resp = []; }
+    resp.forEach(function (x, k) {
+      var r = go[k], code = x.getResponseCode(), body = x.getContentText();
+      if (LlmsCore.looksBlocked(code, body)) r.e = 'Blocked by bot protection (not bypassed)';
+      else if (code !== 200) r.e = 'HTTP ' + code;
+      else { r.t = llmsUnesc_((body.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]); if (!r.t) r.e = 'The page has no <title>'; }
+    });
+    out = out.concat(res);
+  }
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(LLMS_TITLES_TAB);
+  if (!sh) { sh = ss.insertSheet(LLMS_TITLES_TAB); sh.getRange(1, 1, 1, 4).setValues([['URL', 'Live title', 'Checked at', 'Problem']]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  var have = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues() : [], at = {};
+  have.forEach(function (r, k) { at[String(r[0])] = { row: k + 2, title: String(r[1] || '') }; });
+  var now = llmsNow_(), add = [];
+  out.forEach(function (r) {
+    var row = [r.u, r.t || (at[r.u] ? at[r.u].title : ''), now, r.e || ''];
+    if (at[r.u]) sh.getRange(at[r.u].row, 1, 1, 4).setNumberFormat('@').setValues([row]); else add.push(row);
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 4).setNumberFormat('@').setValues(add);
+  return { action: 'titles', count: out.length, failed: out.filter(function (r) { return r.e; }).length };
 }
 
 // For the schema builder's "Find new pages": every page address in the
