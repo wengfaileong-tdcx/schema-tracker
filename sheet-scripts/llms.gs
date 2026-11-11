@@ -624,8 +624,10 @@ var LlmsCore = (function () {
     }
     if (t === 'pre') { var code = textOf(n).replace(/\n+$/, ''); return code.trim() ? '\n\n```\n' + code + '\n```\n\n' : ''; }
     if (t === 'code' && !ctx.pre) { var c = clean(textOf(n)); return c ? '`' + c + '`' : ''; }
-    if (t === 'strong' || t === 'b') { var s = inline(kids, ctx); return s.trim() ? wrapInline(s, '**') : s; }
-    if (t === 'em' || t === 'i') { var e = inline(kids, ctx); return e.trim() ? wrapInline(e, '*') : e; }
+    // Bold or italic on a bare number ("**91** *+17*" from a score widget) means
+    // nothing to a reader of the file: keep the formatting only around words.
+    if (t === 'strong' || t === 'b') { var s = inline(kids, ctx); return ownLine(n, s.trim() && /\p{L}/u.test(s) ? wrapInline(s, '**') : s); }
+    if (t === 'em' || t === 'i') { var e = inline(kids, ctx); return ownLine(n, e.trim() && /\p{L}/u.test(e) ? wrapInline(e, '*') : e); }
     if (t === 'a') {
       var href = normUrl(n.attrs.href, ctx.base);
       if (hasBlock(n)) {
@@ -675,6 +677,14 @@ var LlmsCore = (function () {
     if (BLOCK.test(t) || BOXED.test(t) || / (block|flex|grid|table|list-item) /.test(cls)) return '\n\n' + inner + '\n\n';
     if (/ inline-(block|flex|grid) /.test(cls)) return ' ' + inner + ' ';
     return inner;
+  }
+
+  // An inline tag the page styles as its own line (class "block", "flex"…).
+  function ownLine(n, out) {
+    var cls = ' ' + String((n.attrs && n.attrs['class']) || '').replace(/\s+/g, ' ') + ' ';
+    if (/ (block|flex|grid|table|list-item) /.test(cls)) return '\n\n' + out + '\n\n';
+    if (/ inline-(block|flex|grid) /.test(cls)) return ' ' + out + ' ';
+    return out;
   }
 
   function wrapInline(s, m) {
