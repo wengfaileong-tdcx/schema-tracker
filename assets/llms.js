@@ -376,7 +376,7 @@
     if (!v) return { text: gen, mode: 'generated', conflicts: [], applied: 0 };
     // llms-full.txt follows your file page by page (matched on each section's URL),
     // so a hand-written file in its own format never gets pages twice.
-    const F = f === 'llms-full.txt' ? C.followFull(v.base, v.mine, gen) : null;
+    const F = f === 'llms-full.txt' ? C.followFull(v.base, v.mine, gen, (S.choices[S.siteId + '|' + f] || {})._add) : null;
     if (!F && v.base === gen) return { text: v.mine, mode: 'mine', conflicts: [], applied: 0, v: v };
     const r = F ? { text: F.text, conflicts: F.conflicts, applied: F.updated.length } : C.merge3(v.base, v.mine, gen);
     const pick = S.choices[S.siteId + '|' + f] || {};
@@ -387,9 +387,9 @@
       const use = typeof pick[i] === 'string' ? pick[i] : pick[i] ? c.theirs : null;
       if (use != null) lines.splice(c.at, c.mine ? c.mine.split('\n').length : 0, ...(use ? use.split('\n') : []));
     });
-    const changed = r.applied || r.conflicts.length || (F && (F.added.length || F.text !== v.mine));
+    const changed = r.applied || r.conflicts.length || (F && (F.added.length || F.missing.length || F.text !== v.mine));
     return { text: lines.join('\n'), mode: changed ? 'merged' : 'mine', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick,
-      sections: !!F, added: F ? F.added : [], removed: F ? F.removed : [], dupes: F ? F.dupes : [] };
+      sections: !!F, added: F ? F.added : [], missing: F ? F.missing : [], removed: F ? F.removed : [], dupes: F ? F.dupes : [] };
   }
 
   // Comments on one "New from the pages" box: stored in the Line Comments tab
@@ -490,6 +490,7 @@
           (o.sections && o.added.length ? '<span class="lx-chip lx-chip-new">+ ' + o.added.length + ' new page' + (o.added.length > 1 ? 's' : '') + ' added</span>' : '') +
           (o.applied ? '<span class="lx-chip lx-chip-new">+ ' + o.applied + ' page update' + (o.applied > 1 ? 's' : '') + ' merged in</span>' : '') +
           (o.conflicts.length ? '<span class="lx-chip lx-chip-warn">' + o.conflicts.length + (o.sections ? ' page' + (o.conflicts.length > 1 ? 's' : '') + ' changed on the site' : ' to review') + '</span>' : '') +
+          (o.sections && o.missing.length ? '<span class="lx-chip lx-chip-warn">' + o.missing.length + ' page' + (o.missing.length > 1 ? 's' : '') + ' not in your version</span>' : '') +
           (o.sections && (o.removed.length || o.dupes.length) ? '<span class="lx-chip lx-chip-warn">' + (o.removed.length + o.dupes.length) + ' note' + (o.removed.length + o.dupes.length > 1 ? 's' : '') + '</span>' : '');
       const cmAll = ((S.comments[fileUrl(fname)] || {})[fname]) || {};
       const cmRev = ((S.comments[fileUrl(fname)] || {})[reviewId(fname)]) || {};
@@ -497,16 +498,20 @@
       let body = '';
       if (editing) {
         body = '<div class="lx-editor"><label for="lx-edit-' + fname + '">Edit ' + fname + '</label>' +
+          '<label class="lx-load">Load from a file (.txt or .md) <input type="file" accept=".txt,.md,text/plain,text/markdown" data-load="' + fname + '"></label>' +
           '<textarea id="lx-edit-' + fname + '" class="lx-edit-ta" rows="22" spellcheck="false">' + esc(o.text) + '</textarea>' +
           '<p class="lx-hint">After you save, this file follows your version: later page updates are merged into it, and anything you changed by hand is kept. Where a page changes a line you also changed, your line stays and is listed for review.</p>' +
           '<div class="lx-row"><button type="button" class="primary" data-lx="save-edit" data-file="' + fname + '"' + (b ? ' disabled' : '') + '>Save as my version</button>' +
           '<button type="button" data-lx="cancel-edit">Cancel</button></div></div>';
       } else if (shown) {
         let conf = '';
-        if (o.sections && (o.added.length || o.removed.length || o.dupes.length)) {
+        if (o.sections && (o.added.length || o.missing.length || o.removed.length || o.dupes.length)) {
           const li = x => '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url || x)) + '</span></li>';
           conf += '<div class="lx-fnotes">' +
             (o.added.length ? '<p><b>Added in your format</b> (new pages, placed next to pages from the same part of the site):</p><ul>' + o.added.map(li).join('') + '</ul>' : '') +
+            (o.missing.length ? '<p><b>On the website but not in your version</b>. Add the ones you want; the rest stay out:</p><ul>' + o.missing.map(x =>
+              '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url)) + '</span> <button type="button" class="mini" data-lx="add-page" data-file="' + fname + '" data-url="' + esc(x.url) + '">Add to my version</button></li>').join('') + '</ul>' +
+              (o.missing.length > 1 ? '<button type="button" class="mini" data-lx="add-page" data-file="' + fname + '" data-url="*">Add all ' + o.missing.length + '</button>' : '') : '') +
             (o.removed.length ? '<p><b>In your version but no longer tracked</b>. They stay in your file; remove them with Edit if the pages are gone:</p><ul>' + o.removed.map(li).join('') + '</ul>' : '') +
             (o.dupes.length ? '<p><b>In your version more than once</b>. Remove the extra copy with Edit:</p><ul>' + o.dupes.map(u => li({ url: u })).join('') + '</ul>' : '') + '</div>';
         }
@@ -843,6 +848,11 @@
       if (!window.confirm('Stop following your version of ' + file + '? It will be generated from the pages again. Your version stays in the “llms files” tab.')) return;
       resetVersion(file);
     }
+    else if (act === 'add-page') {
+      const k = S.siteId + '|' + file, p = S.choices[k] || (S.choices[k] = {}), add = p._add || (p._add = {});
+      (url === '*' ? output(file).missing.map(x => x.url) : [url]).forEach(u => { add[u] = true; });
+      toast('Added. Press “Save this as my version” to keep it.'); draw();
+    }
     else if (act === 'pick') {
       const k = S.siteId + '|' + file, i = t.dataset.i;
       const p = S.choices[k] || (S.choices[k] = {});
@@ -895,6 +905,11 @@
   function onChange(e) {
     const t = e.target;
     if (t.id === 'lx-file') { readFiles(t.files); t.value = ''; return; }
+    if (t.dataset.load && t.files && t.files[0]) {
+      const ta = $('lx-edit-' + t.dataset.load), f = t.files[0];
+      f.text().then(txt => { if (ta) { ta.value = txt.replace(/\r\n?/g, '\n'); ta.focus(); } toast('Loaded ' + f.name + '. Check it, then press Save as my version.'); });
+      return;
+    }
     if (t.id === 'lx-name') { store.set('llms-name', t.value.trim()); return; }
     if (t.dataset.hist) { const p = S.histPick[t.dataset.url] || (S.histPick[t.dataset.url] = {}); p[t.dataset.hist] = t.value; return; }
     if (t.id === 'lx-hf') { S.fileCmp = { file: t.value }; draw(); return; }

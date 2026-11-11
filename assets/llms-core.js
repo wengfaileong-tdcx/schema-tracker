@@ -511,7 +511,8 @@ var LlmsCore = (function () {
   // the site changed are listed as conflicts (your section vs the new one),
   // new pages are added once in your format, next to pages from the same part
   // of the site. Returns null when your file has no page sections to follow.
-  function followFull(base, mine, gen) {
+  function followFull(base, mine, gen, include) {
+    include = include || {};
     var M = splitFull(mine), B = splitFull(base), G = splitFull(gen);
     var myPages = M.items.filter(function (x) { return x.kind === 'page' && x.url; });
     if (!myPages.length) return null;
@@ -520,12 +521,14 @@ var LlmsCore = (function () {
     var label = myPages.some(function (x) { return /^url$/i.test(x.label); }) ? 'URL' : 'Source';
     var styled = function (g) { return g.body.map(function (l, i) { return i < 8 && /^Source:\s/i.test(l) ? l.replace(/^Source:/i, label + ':') : l; }); };
     var counts = {}; myPages.forEach(function (x) { counts[x.url] = (counts[x.url] || 0) + 1; });
-    var out = { added: [], changed: [], removed: [], dupes: Object.keys(counts).filter(function (u) { return counts[u] > 1; }) };
+    var out = { added: [], missing: [], changed: [], removed: [], dupes: Object.keys(counts).filter(function (u) { return counts[u] > 1; }) };
     var items = M.items.slice();
     var spacer = (myPages[0] && myPages[0].tail.length ? myPages[0].tail : ['']).slice();
     G.items.forEach(function (g, gi) {
       if (g.kind !== 'page' || !g.url || mine1[g.url]) return;
-      if (base1[g.url]) return;   // it was in the file when you saved and you took it out: respect that
+      // Already there when you saved but not in your file: you may have left it out on
+      // purpose, or your file was written elsewhere. Ask, don't guess.
+      if (base1[g.url] && !include[g.url]) { out.missing.push({ url: g.url, title: g.title }); return; }
       var it = { kind: 'page', url: g.url, title: g.title, body: styled(g), tail: spacer.slice(), added: true };
       var at = -1;
       items.forEach(function (x, i) { if (x.kind === 'page' && x.url && seg(x.url) === seg(g.url) && seg(g.url)) at = i; });
@@ -558,7 +561,7 @@ var LlmsCore = (function () {
       }
       lines = lines.concat(body, x.tail);
     });
-    return { text: lines.join('\n'), conflicts: conflicts, added: out.added, updated: out.updated, changed: out.changed, removed: out.removed, dupes: out.dupes };
+    return { text: lines.join('\n'), conflicts: conflicts, added: out.added, missing: out.missing, updated: out.updated, changed: out.changed, removed: out.removed, dupes: out.dupes };
   }
 
   return {
