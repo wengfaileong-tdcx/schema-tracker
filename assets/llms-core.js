@@ -115,10 +115,24 @@ var LlmsCore = (function () {
     return nodes.map(function (n) { return render(n, ctx); }).join('');
   }
 
+  // Cloudflare "email protection" hides addresses from bots but shows them to
+  // every visitor (the page decodes them as it loads). Do the same.
+  function cfDecode(hex) {
+    try {
+      var key = parseInt(hex.substr(0, 2), 16), s = '';
+      for (var i = 2; i < hex.length; i += 2) s += String.fromCharCode(parseInt(hex.substr(i, 2), 16) ^ key);
+      return decodeURIComponent(escape(s));
+    } catch (e) { return ''; }
+  }
+
   function render(n, ctx) {
     if (n.text != null) return ctx.pre ? n.text : n.text.replace(/\s+/g, ' ');
     var t = n.tag, kids = n.children || [];
     if (DROP.test(t)) return '';
+    if (n.attrs && n.attrs['data-cfemail']) return cfDecode(n.attrs['data-cfemail']);
+    // A form's fields and buttons ("Name", "Email", "Send message") say nothing about the business.
+    if (t === 'form') return '\n\n' + inline(kids, Object.assign({}, ctx, { inForm: true })) + '\n\n';
+    if (ctx.inForm && /^(label|button|legend|output|select|textarea|option)$/.test(t)) return '';
     if (t === 'br') return ctx.pre ? '\n' : '\n';
     if (t === 'hr') return '\n\n---\n\n';
     var h = t.match(/^h([1-6])$/);
@@ -133,6 +147,8 @@ var LlmsCore = (function () {
     if (t === 'strong' || t === 'b') { var s = inline(kids, ctx); return ownLine(n, s.trim() && /\p{L}/u.test(s) ? wrapInline(s, '**') : s); }
     if (t === 'em' || t === 'i') { var e = inline(kids, ctx); return ownLine(n, e.trim() && /\p{L}/u.test(e) ? wrapInline(e, '*') : e); }
     if (t === 'a') {
+      var cf = String(n.attrs.href || '').match(/\/cdn-cgi\/l\/email-protection#([0-9a-f]+)/i);
+      if (cf) { var em = cfDecode(cf[1]), lab = clean(inline(kids, ctx)); return lab && lab !== em ? lab + ' (' + em + ')' : em; }
       var href = normUrl(n.attrs.href, ctx.base);
       if (hasBlock(n)) {
         var body = inline(kids, ctx);
@@ -460,7 +476,93 @@ var LlmsCore = (function () {
     return 'Review: the page changed ' + n + ' place' + (n > 1 ? 's' : '') + ' you also edited. Your text was kept; compare with the live page.';
   }
 
+  /* ---------- following your own llms-full.txt, page by page ---------- */
+
+  // Splits an llms-full.txt into its intro, "# Group" headings and "## Page"
+  // sections. A page section is known by its "URL:" or "Source:" line.
+  function splitFull(text) {
+    var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n'), pre = [], items = [], cur = null, firstTitle = true;
+    lines.forEach(function (l) {
+      var group = /^# \S/.test(l), page = /^## \S/.test(l);
+      if (group && firstTitle && !items.length && !pre.some(function (x) { return /^# /.test(x); })) { pre.push(l); return; }
+      if (group || page) { cur = { kind: group ? 'group' : 'page', lines: [l] }; items.push(cur); return; }
+      (cur ? cur.lines : pre).push(l);
+    });
+    items.forEach(function (it) {
+      var n = it.lines.length;
+      while (n > 1 && /^\s*(-{3,})?\s*$/.test(it.lines[n - 1])) n--;
+      it.body = it.lines.slice(0, n); it.tail = it.lines.slice(n);
+      if (it.kind === 'page') {
+        it.title = it.lines[0].replace(/^##\s+/, '');
+        for (var i = 1; i < Math.min(it.body.length, 8); i++) {
+          var m = it.body[i].match(/^(?:URL|Source):\s*(\S+)/i);
+          if (m) { it.url = normUrl(m[1]); it.label = it.body[i].match(/^(URL|Source):/i)[1]; break; }
+        }
+      }
+    });
+    // A "---" left at the end of the intro belongs between sections, not to the intro.
+    return { pre: pre, items: items };
+  }
+  var sameBody = function (a, b) { return a.join('\n').replace(/\s+/g, ' ').trim() === b.join('\n').replace(/\s+/g, ' ').trim(); };
+  var seg = function (u) { return (pathOf(u).split('/').filter(Boolean)[0] || ''); };
+
+  // mine: your saved llms-full.txt; base: what the tool made when you saved it;
+  // gen: what the tool makes now. Your sections are never changed here: pages
+  // the site changed are listed as conflicts (your section vs the new one),
+  // new pages are added once in your format, next to pages from the same part
+  // of the site. Returns null when your file has no page sections to follow.
+  function followFull(base, mine, gen) {
+    var M = splitFull(mine), B = splitFull(base), G = splitFull(gen);
+    var myPages = M.items.filter(function (x) { return x.kind === 'page' && x.url; });
+    if (!myPages.length) return null;
+    var byUrl = function (S) { var o = {}; S.items.forEach(function (x) { if (x.kind === 'page' && x.url && !o[x.url]) o[x.url] = x; }); return o; };
+    var mine1 = byUrl(M), base1 = byUrl(B), gen1 = byUrl(G);
+    var label = myPages.some(function (x) { return /^url$/i.test(x.label); }) ? 'URL' : 'Source';
+    var styled = function (g) { return g.body.map(function (l, i) { return i < 8 && /^Source:\s/i.test(l) ? l.replace(/^Source:/i, label + ':') : l; }); };
+    var counts = {}; myPages.forEach(function (x) { counts[x.url] = (counts[x.url] || 0) + 1; });
+    var out = { added: [], changed: [], removed: [], dupes: Object.keys(counts).filter(function (u) { return counts[u] > 1; }) };
+    var items = M.items.slice();
+    var spacer = (myPages[0] && myPages[0].tail.length ? myPages[0].tail : ['']).slice();
+    G.items.forEach(function (g, gi) {
+      if (g.kind !== 'page' || !g.url || mine1[g.url]) return;
+      if (base1[g.url]) return;   // it was in the file when you saved and you took it out: respect that
+      var it = { kind: 'page', url: g.url, title: g.title, body: styled(g), tail: spacer.slice(), added: true };
+      var at = -1;
+      items.forEach(function (x, i) { if (x.kind === 'page' && x.url && seg(x.url) === seg(g.url) && seg(g.url)) at = i; });
+      if (at < 0) {   // else after the page that comes before it in the generated file
+        for (var k = gi - 1; k >= 0 && at < 0; k--) { var prev = G.items[k]; if (prev.url) items.forEach(function (x, i) { if (x.url === prev.url) at = i; }); }
+      }
+      if (at < 0) at = items.length - 1;
+      if (at >= 0 && !items[at].tail.length) items[at].tail = spacer.slice();
+      items.splice(at + 1, 0, it);
+      out.added.push({ url: g.url, title: g.title });
+    });
+    Object.keys(mine1).forEach(function (u) { if (!gen1[u]) out.removed.push({ url: u, title: mine1[u].title }); });
+    var lines = M.pre.slice(), conflicts = [];
+    out.updated = [];
+    items.forEach(function (x) {
+      var g = x.kind === 'page' && x.url && !x.added ? gen1[x.url] : null, b = g ? base1[x.url] : null, body = x.body;
+      if (g && b && !sameBody(b.body, g.body) && counts[x.url] === 1) {
+        var sb = styled(b), sg = styled(g);
+        // Section as the tool made it, or lightly edited: take the website's change
+        // the usual way. Rewritten by you (most lines differ): ask.
+        var have = {}; sb.forEach(function (l) { have[l.trim()] = true; });
+        var mineLines = body.filter(function (l) { return l.trim(); });
+        var kept = mineLines.filter(function (l) { return have[l.trim()]; }).length / Math.max(1, mineLines.length);
+        var m = sameBody(body, sb) ? { text: sg.join('\n'), conflicts: [] } : kept >= 0.7 ? merge3(sb.join('\n'), body.join('\n'), sg.join('\n')) : null;
+        if (m && !m.conflicts.length) { body = m.text.split('\n'); out.updated.push({ url: x.url, title: x.title }); }
+        else {
+          conflicts.push({ at: lines.length, mine: body.join('\n'), theirs: sg.join('\n'), base: sb.join('\n'), page: x.title, url: x.url });
+          out.changed.push({ url: x.url, title: x.title });
+        }
+      }
+      lines = lines.concat(body, x.tail);
+    });
+    return { text: lines.join('\n'), conflicts: conflicts, added: out.added, updated: out.updated, changed: out.changed, removed: out.removed, dupes: out.dupes };
+  }
+
   return {
+    splitFull: splitFull, followFull: followFull,
     reviewNote: reviewNote,
     normUrl: normUrl, host: host, pathOf: pathOf, sameSite: sameSite, toLive: toLive,
     parse: parse, toMarkdown: toMarkdown, statedUrl: statedUrl, shortTitle: shortTitle, looksBlocked: looksBlocked,

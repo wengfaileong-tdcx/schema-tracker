@@ -617,3 +617,9 @@ button.lx-tog::before{content:"▸";color:var(--muted);font-size:11px;width:10px
 .pt{font-size:13.5px;color:var(--ink);margin-top:2px;overflow-wrap:anywhere}
 .pt:empty{display:none}
 .lt-status{margin:-4px 0 0;font-size:12.5px;color:var(--muted)}
+.lx-fnotes{margin-top:10px;border:1px solid var(--rule);border-radius:8px;padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.lx-fnotes p{margin:4px 0 0}
+.lx-fnotes ul{margin:2px 0 4px;padding-left:18px}
+.lx-conf-p{font-size:13px;padding-top:6px;border-top:1px dashed #dcc282}
+.lx-conf-what>summary{cursor:pointer;font-size:12.5px;margin:4px 0}
+.lx-conf-what .lx-diff{background:var(--paper)}

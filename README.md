@@ -297,6 +297,16 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 
 **Limits**: fetching respects robots.txt and never bypasses bot protection (those pages show "Couldn't fetch"; upload them). Text that only appears after JavaScript runs can be missing from a fetch. A cell holds 50,000 characters, so a page is split over two cells and cut at about 98,000.
 
+### Following your own llms-full.txt
+
+After **Save as my version**, llms-full.txt follows your file **page by page**, matching each `## Page` section by its `URL:` or `Source:` line, so a hand-written file in its own format (its own groups, headings and wording) never gets a page twice:
+- a page you didn’t edit, or only lightly edited, takes the website’s changes automatically (your edits kept);
+- a page you rewrote is listed as **changed on the site**, with what changed on the website, your section and the new text side by side; your section stays until you pick or type the new one;
+- a new page is added once, in your format (`URL:` if your file uses it), next to your pages from the same part of the site (e.g. a new `/blog/` post after your other blog posts);
+- pages that are in your file but no longer tracked, or that appear twice, are listed; nothing is deleted for you.
+
+llms.txt (the short list) keeps following your version line by line.
+
 ### History (llms.txt tab)
 
 - **History card → Updates:** every update, upload, weekly check and Drive save for the site (from the “llms queue” tab): when, who, and how many pages were new, changed or couldn’t be fetched. Open one to see its pages.

@@ -374,8 +374,11 @@
   function output(f) {
     const gen = generated()[f], v = latestVersion(f);
     if (!v) return { text: gen, mode: 'generated', conflicts: [], applied: 0 };
-    if (v.base === gen) return { text: v.mine, mode: 'mine', conflicts: [], applied: 0, v: v };
-    const r = C.merge3(v.base, v.mine, gen);
+    // llms-full.txt follows your file page by page (matched on each section's URL),
+    // so a hand-written file in its own format never gets pages twice.
+    const F = f === 'llms-full.txt' ? C.followFull(v.base, v.mine, gen) : null;
+    if (!F && v.base === gen) return { text: v.mine, mode: 'mine', conflicts: [], applied: 0, v: v };
+    const r = F ? { text: F.text, conflicts: F.conflicts, applied: F.updated.length } : C.merge3(v.base, v.mine, gen);
     const pick = S.choices[S.siteId + '|' + f] || {};
     const lines = r.text.split('\n');
     r.conflicts.slice().reverse().forEach((c, ri) => {
@@ -384,7 +387,9 @@
       const use = typeof pick[i] === 'string' ? pick[i] : pick[i] ? c.theirs : null;
       if (use != null) lines.splice(c.at, c.mine ? c.mine.split('\n').length : 0, ...(use ? use.split('\n') : []));
     });
-    return { text: lines.join('\n'), mode: 'merged', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick };
+    const changed = r.applied || r.conflicts.length || (F && (F.added.length || F.text !== v.mine));
+    return { text: lines.join('\n'), mode: changed ? 'merged' : 'mine', conflicts: r.conflicts, applied: r.applied, v: v, pick: pick,
+      sections: !!F, added: F ? F.added : [], removed: F ? F.removed : [], dupes: F ? F.dupes : [] };
   }
 
   // Comments on one "New from the pages" box: stored in the Line Comments tab
@@ -482,8 +487,10 @@
       const o = output(fname), shown = S.preview === fname, editing = S.editing === fname;
       const chip = o.mode === 'generated' ? '<span class="lx-chip">Generated from the pages</span>'
         : '<span class="lx-chip lx-chip-mine">Your version · ' + esc(when(o.v.savedAt)) + (o.v.by ? ' · ' + esc(o.v.by) : '') + '</span>' +
+          (o.sections && o.added.length ? '<span class="lx-chip lx-chip-new">+ ' + o.added.length + ' new page' + (o.added.length > 1 ? 's' : '') + ' added</span>' : '') +
           (o.applied ? '<span class="lx-chip lx-chip-new">+ ' + o.applied + ' page update' + (o.applied > 1 ? 's' : '') + ' merged in</span>' : '') +
-          (o.conflicts.length ? '<span class="lx-chip lx-chip-warn">' + o.conflicts.length + ' to review</span>' : '');
+          (o.conflicts.length ? '<span class="lx-chip lx-chip-warn">' + o.conflicts.length + (o.sections ? ' page' + (o.conflicts.length > 1 ? 's' : '') + ' changed on the site' : ' to review') + '</span>' : '') +
+          (o.sections && (o.removed.length || o.dupes.length) ? '<span class="lx-chip lx-chip-warn">' + (o.removed.length + o.dupes.length) + ' note' + (o.removed.length + o.dupes.length > 1 ? 's' : '') + '</span>' : '');
       const cmAll = ((S.comments[fileUrl(fname)] || {})[fname]) || {};
       const cmRev = ((S.comments[fileUrl(fname)] || {})[reviewId(fname)]) || {};
       const openCm = [cmAll, cmRev].reduce((n, m) => n + Object.values(m).reduce((k, l) => k + l.filter(c => !c.resolved).length, 0), 0);
@@ -496,10 +503,21 @@
           '<button type="button" data-lx="cancel-edit">Cancel</button></div></div>';
       } else if (shown) {
         let conf = '';
+        if (o.sections && (o.added.length || o.removed.length || o.dupes.length)) {
+          const li = x => '<li>' + esc(x.title || '') + ' <span class="lx-size">' + esc(pathLabel(x.url || x)) + '</span></li>';
+          conf += '<div class="lx-fnotes">' +
+            (o.added.length ? '<p><b>Added in your format</b> (new pages, placed next to pages from the same part of the site):</p><ul>' + o.added.map(li).join('') + '</ul>' : '') +
+            (o.removed.length ? '<p><b>In your version but no longer tracked</b>. They stay in your file; remove them with Edit if the pages are gone:</p><ul>' + o.removed.map(li).join('') + '</ul>' : '') +
+            (o.dupes.length ? '<p><b>In your version more than once</b>. Remove the extra copy with Edit:</p><ul>' + o.dupes.map(u => li({ url: u })).join('') + '</ul>' : '') + '</div>';
+        }
         if (o.conflicts.length) {
-          conf = '<div class="lx-conf"><b>' + o.conflicts.length + ' place' + (o.conflicts.length > 1 ? 's' : '') + ' where the pages changed text you edited.</b> Your text is used unless you pick the new one.' +
-            o.conflicts.map((c, i) => '<div class="lx-conf-i"><div><span class="lx-conf-l">Your text</span><pre>' + esc(c.mine || '(you removed this)') + '</pre></div>' +
-              '<div><label class="lx-conf-l" for="lx-conf-' + fname + '-' + i + '">New from the pages (you can type here)</label>' +
+          const secs = o.sections;
+          conf += '<div class="lx-conf"><b>' + o.conflicts.length + (secs ? ' page' + (o.conflicts.length > 1 ? 's' : '') + ' changed on the website since your version.</b> Your section is kept unless you pick the new one.'
+            : ' place' + (o.conflicts.length > 1 ? 's' : '') + ' where the pages changed text you edited.</b> Your text is used unless you pick the new one.') +
+            o.conflicts.map((c, i) => (secs ? '<div class="lx-conf-p"><b>' + esc(c.page || '') + '</b> <span class="lx-size">' + esc(pathLabel(c.url || '')) + '</span>' +
+              (c.base ? (() => { const d = D.compare(c.base, c.theirs, { text: true, full: false, context: 2, labels: { left: 'Website before', right: 'Website now' } }); return d.error ? '' : '<details class="lx-conf-what"><summary>What changed on the website</summary><div class="lx-diff">' + d.html + '</div></details>'; })() : '') + '</div>' : '') +
+              '<div class="lx-conf-i"><div><span class="lx-conf-l">' + (secs ? 'Your section' : 'Your text') + '</span><pre>' + esc(c.mine || '(you removed this)') + '</pre></div>' +
+              '<div><label class="lx-conf-l" for="lx-conf-' + fname + '-' + i + '">' + (secs ? 'New from the website' : 'New from the pages') + ' (you can type here)</label>' +
               '<textarea id="lx-conf-' + fname + '-' + i + '" class="lx-conf-ta" data-lx-conf="' + fname + '" data-i="' + i + '" spellcheck="false" rows="' +
               Math.min(10, Math.max(2, (typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '').split('\n').length + 1)) + '"' +
               (c.theirs ? '' : ' placeholder="(removed from the pages)"') + '>' + esc(typeof o.pick[i] === 'string' ? o.pick[i] : c.theirs || '') + '</textarea>' +
