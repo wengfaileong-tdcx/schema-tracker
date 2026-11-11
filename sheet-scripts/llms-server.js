@@ -11,6 +11,7 @@
      llms sites  one row per website (address, staging, sitemap, intro)
      llms pages  one row per page (text as Markdown, previous text)
      llms queue  requests from the dashboard and the weekly check
+     llms page history  each page's older text (the last LLMS_HISTORY_KEEP versions)
      llms files  your edited versions of llms.txt / llms-full.txt
                  (added by the dashboard the first time you save one)
 
@@ -36,11 +37,13 @@ var LLMS_BUDGET_MS = 4.5 * 60 * 1000;   // Apps Script stops a run at 6 minutes
 var LLMS_BATCH = 5;                      // pages fetched at the same time
 var LLMS_CELL = 49000;                   // a cell holds 50,000 characters
 
-var LLMS_TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue' };
+var LLMS_HISTORY_KEEP = 10;              // older versions kept per page in "llms page history"
+var LLMS_TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue', history: 'llms page history' };
 var LLMS_COLS = {
   sites: ['Site ID', 'Name', 'Live URL', 'Staging URL', 'Sitemap', 'llms.txt URL', 'Exclude paths', 'Sections', 'Page links in llms.txt', 'Intro'],
   pages: ['Site ID', 'URL', 'Title', 'Description', 'Text from', 'Added by hand', 'Removed', 'In sitemap', 'Last changed', 'Last checked', 'Last error', 'Markdown', 'Markdown 2', 'Previous', 'Previous 2', 'Edited from', 'Edited from 2'],
-  queue: ['ID', 'Requested at', 'Requested by', 'Site ID', 'Action', 'URLs', 'Status', 'Progress', 'Finished at', 'Result']
+  queue: ['ID', 'Requested at', 'Requested by', 'Site ID', 'Action', 'URLs', 'Status', 'Progress', 'Finished at', 'Result'],
+  history: ['Site ID', 'URL', 'Text since', 'Replaced at', 'Text from', 'Markdown', 'Markdown 2']
 };
 var LLMS_SEED_SITES = [
   ['llmsource', 'LLMSource', 'https://llmsource.com', '', 'https://llmsource.com/sitemap.xml', 'https://llmsource.com/llms.txt', '', 'ai-diagnostic=AI Diagnostic', 'yes', ''],
@@ -125,6 +128,7 @@ function llmsTick() {
   if (!lock.tryLock(2000)) return;
   try {
     var started = Date.now();
+    try { llmsPruneHistory_(); } catch (e) { /* never block the queue on pruning */ }
     while (Date.now() - started < LLMS_BUDGET_MS) {
       var q = llmsRows_('queue'), idx = -1;
       for (var i = 0; i < q.length; i++) if (q[i][6] === 'Running' || q[i][6] === 'Waiting') { idx = i; break; }
@@ -389,6 +393,7 @@ function llmsSave_(site, p, r, item, byHand) {
     row[2] = r.title; row[3] = r.description || ''; row[10] = '';
     if (item.s === 'new' || item.s === 'changed') {
       var prev = llmsSplit_(p ? p.markdown : ''), md = r.md;
+      if (p && p.markdown) llmsKeepHistory_(site.id, r.u, p.raw[8], now, p.raw[4], prev);
       row[4] = 'live fetch'; row[8] = now;
       if (p && p.editBase) {
         // You edited this page by hand: merge the page's changes into your text.
@@ -407,6 +412,30 @@ function llmsSave_(site, p, r, item, byHand) {
   else { sh.appendRow(row); }
   var rowNum = p ? p.row : sh.getLastRow();
   return { row: rowNum, url: r.u, title: row[2], markdown: String(row[11]) + String(row[12]), editBase: String(row[15] || '') + String(row[16] || ''), removed: llmsYes_(row[6]), raw: row };
+}
+
+// The text being replaced goes to "llms page history" (tab made by llmsSetup;
+// skipped quietly if it isn't there yet). Old rows are pruned by llmsTick.
+function llmsKeepHistory_(siteId, url, since, replacedAt, from, parts) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LLMS_TAB.history);
+  if (!sh) return;
+  sh.appendRow([siteId, url, String(since || ''), replacedAt, String(from || ''), parts[0], parts[1]]);
+}
+
+// Keeps the newest LLMS_HISTORY_KEEP rows per page; runs at most once an hour.
+function llmsPruneHistory_() {
+  var props = PropertiesService.getScriptProperties(), last = +props.getProperty('llms-prune-at') || 0;
+  if (Date.now() - last < 3600 * 1000) return;
+  props.setProperty('llms-prune-at', String(Date.now()));
+  var sh = SpreadsheetApp.getActive().getSheetByName(LLMS_TAB.history);
+  if (!sh || sh.getLastRow() < 2) return;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues(), by = {}, drop = [];
+  rows.forEach(function (r, i) { var k = r[0] + '|' + r[1]; (by[k] = by[k] || []).push({ row: i + 2, at: String(r[3]) }); });
+  Object.keys(by).forEach(function (k) {
+    by[k].sort(function (a, b) { return b.at < a.at ? -1 : b.at > a.at ? 1 : b.row - a.row; })
+      .slice(LLMS_HISTORY_KEEP).forEach(function (x) { drop.push(x.row); });
+  });
+  drop.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
 }
 
 function llmsMark_(site, urls, removed) {

@@ -297,6 +297,13 @@ The **llms.txt** tab (next to **Schema**) keeps each site's page text and builds
 
 **Limits**: fetching respects robots.txt and never bypasses bot protection (those pages show "Couldn't fetch"; upload them). Text that only appears after JavaScript runs can be missing from a fetch. A cell holds 50,000 characters, so a page is split over two cells and cut at about 98,000.
 
+### History (llms.txt tab)
+
+- **History card → Updates:** every update, upload, weekly check and Drive save for the site (from the “llms queue” tab): when, who, and how many pages were new, changed or couldn’t be fetched. Open one to see its pages.
+- **History card → File versions:** every version of llms.txt / llms-full.txt that was saved as your version or sent to Drive (the developer’s copy), from the “llms files” tab. Compare any two, or any one with the file now. By default it shows what changed since the last files sent to Drive.
+- **Each page → History:** the page’s older text, kept in the **“llms page history”** tab (made by llmsSetup) whenever a fetch, an upload or a hand edit replaces it. Compare any older version with another or with the text now. The Apps Script keeps the newest `LLMS_HISTORY_KEEP` (10) versions per page and prunes older ones once an hour; change the number at the top of the script.
+
+
 ## Schema builder
 
 Each page in the Schema tab has a **Build / edit schema** button, and the toolbar has **+ New page schema**. Both open the builder panel (needs Google Sheet connected with edit access).

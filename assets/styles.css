@@ -595,3 +595,21 @@ button.lx-tog::before{content:"▸";color:var(--muted);font-size:11px;width:10px
 .bd-found li:first-child{border-top:0}
 .bd-fp{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;font-family:var(--mono);font-size:12.5px}
 .bd-fd{flex:0 0 auto;color:var(--muted);font-size:12px;white-space:nowrap}
+
+/* llms.txt history */
+.lx-hist{margin-top:10px;border:1px solid var(--rule);border-radius:8px}
+.lx-hist>summary{cursor:pointer;padding:8px 12px;font-size:13px;font-weight:600}
+.lx-hist-b{padding:4px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.lx-hist-pick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}
+.lx-hist-pick label{margin:0;font-weight:600}
+.lx-hist-pick select{width:auto;max-width:100%;min-width:0}
+.lx-hlist{list-style:none;margin:8px 0;padding:0;border:1px solid var(--rule);border-radius:8px;max-height:460px;overflow:auto}
+.lx-hlist>li{border-top:1px solid var(--rule)}
+.lx-hlist>li:first-child{border-top:0}
+.lx-hrow .lx-tog{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;width:100%;text-align:left;padding:9px 12px;border:0;background:none;border-radius:0}
+.lx-hwhen{font-size:12.5px;color:var(--muted);min-width:150px}
+.lx-hwhat{font-weight:600;font-size:13.5px}
+.lx-hsum{font-size:12.5px;color:var(--muted);flex:1 1 200px}
+.lx-hpages{list-style:none;margin:0;padding:0 12px 10px 24px;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.lx-hpages li{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lx-herr{color:var(--chg-ink);font-size:12px}

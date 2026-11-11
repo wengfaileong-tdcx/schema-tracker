@@ -16,7 +16,7 @@
   const D = window.SchemaDiff, C = window.LlmsCore;
   const esc = D.esc;
   const $ = id => document.getElementById(id);
-  const TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue', files: 'llms files' };
+  const TAB = { sites: 'llms sites', pages: 'llms pages', queue: 'llms queue', files: 'llms files', history: 'llms page history' };
   const FILE_COLS = ['Site ID', 'File', 'Version', 'Kind', 'Saved at', 'Saved by', 'Part', 'Text'];
   const CM_TAB = (window.SHEET_CONFIG || {}).lineCommentsTab || '';
   const CELL = 49000;
@@ -30,7 +30,8 @@
     started: false, connected: false, loading: false, missing: false, error: '',
     sites: [], pages: [], queue: [], siteId: store.get('llms-site'),
     way: 'fetch', filter: 'all', open: {}, preview: null, job: null, uploads: [], pasteOpen: false,
-    versions: [], filesTab: false, comments: {}, editing: null, choices: {}, pageEdit: null
+    versions: [], filesTab: false, comments: {}, editing: null, choices: {}, pageEdit: null,
+    exports: [], hist: [], histText: {}, histPick: {}, histTab: 'updates', histOpen: {}, histMore: 0, fileCmp: {}
   };
 
   const sheet = () => window.SchemaApp && window.SchemaApp.sheet;
@@ -65,6 +66,7 @@
       });
       if (!S.sites.some(s => s.id === S.siteId)) S.siteId = S.sites[0] ? S.sites[0].id : '';
       await loadExtras();
+      await loadHistory();
     } catch (e) {
       if (/Unable to parse range|not found/i.test(e.message)) {
         S.missing = true;
@@ -81,6 +83,33 @@
   }
 
 
+  // "llms page history": older text of each page. Only the small columns are
+  // read here; a version's text is fetched when someone compares it.
+  async function loadHistory() {
+    try {
+      const r = await sheet().api('/values/' + enc("'" + TAB.history + "'!A:E"));
+      S.hist = (r.values || []).slice(1).map((x, i) => ({ row: i + 2, site: x[0] || '', url: x[1] || '', since: x[2] || '', at: x[3] || '', from: x[4] || '' }))
+        .filter(h => h.url);
+    } catch (e) { S.hist = []; }
+  }
+  async function histTexts(list) {
+    const need = list.filter(h => S.histText[h.site + '|' + h.url + '|' + h.at] == null);
+    if (!need.length) return;
+    const r = await sheet().api('/values:batchGet?' + need.map(h => 'ranges=' + enc("'" + TAB.history + "'!A" + h.row + ':G' + h.row)).join('&'));
+    r.valueRanges.forEach((v, i) => {
+      const x = (v.values || [])[0] || [], h = need[i];
+      // Rows can move when old ones are pruned: only trust the row if it is still the same version.
+      if (x[0] !== h.site || x[1] !== h.url || x[3] !== h.at) throw new Error('the history changed in the sheet. Press Reload.');
+      S.histText[h.site + '|' + h.url + '|' + h.at] = (x[5] || '') + (x[6] || '');
+    });
+  }
+  // Uploads and hand edits replace a page's text from here, so they keep the old text too.
+  async function keepHistory(rows) {
+    if (!rows.length) return;
+    await sheet().api('/values/' + enc("'" + TAB.history + "'!A:G") + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: rows }) }).catch(() => { /* no history tab yet: rerun llmsSetup */ });
+  }
+
   // Saved versions of the two files ("llms files" tab, created on first save)
   // and line comments on them (the dashboard's existing "Line Comments" tab).
   async function loadExtras() {
@@ -96,8 +125,10 @@
       S.versions = Object.values(by).map(v => {
         const join = kind => (v.parts[kind] || []).sort((a, b) => a[0] - b[0]).map(p => p[1]).join('');
         return { site: v.site, file: v.file, version: v.version, savedAt: v.savedAt, by: v.by,
-          reset: !!v.parts.reset, export: !!v.parts.export && !v.parts.mine, mine: join('mine'), base: join('base') };
-      }).filter(v => !v.export).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+          reset: !!v.parts.reset, export: !!v.parts.export && !v.parts.mine, mine: join('mine'), base: join('base'), text: join('export') };
+      }).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+      S.exports = S.versions.filter(v => v.export);
+      S.versions = S.versions.filter(v => !v.export);
     } catch (e) { S.filesTab = false; S.versions = []; }
     S.comments = {};
     if (!CM_TAB) return;
@@ -176,7 +207,7 @@
       // Re-read the URL column so row numbers are current.
       const r = await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:Q"));
       const rows = (r.values || []);
-      const stamp = now(), updates = [], appends = [], results = [];
+      const stamp = now(), updates = [], appends = [], results = [], hist = [];
       items.forEach(u => {
         const i = rows.findIndex((x, k) => k > 0 && x[0] === S.siteId && x[1] === u.url);
         const old = i > 0 ? rows[i] : null;
@@ -189,10 +220,12 @@
         const row = [S.siteId, u.url, u.title, u.description, base ? 'staging upload + your edits' : 'staging upload', old ? old[5] || '' : 'yes', '', old ? old[7] || '' : '',
           stamp, stamp, note, md[0], md[1], pv[0], pv[1], eb[0], eb[1]];
         if (old) updates.push({ range: "'" + TAB.pages + "'!A" + (i + 1) + ':Q' + (i + 1), values: [row] });
+        if (old && prev && prev !== m.md) hist.push([S.siteId, u.url, old[8] || '', stamp, old[4] || '', pv[0], pv[1]]);
         else appends.push(row);
         results.push({ u: u.url, t: u.title, s: prev ? ((base || prev) === u.md ? 'same' : 'changed') : 'new', up: 1 });
       });
       if (updates.length) await sheet().api('/values:batchUpdate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valueInputOption: 'RAW', data: updates }) });
+      await keepHistory(hist);
       if (appends.length) await sheet().api('/values/' + enc("'" + TAB.pages + "'!A:Q") + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: appends }) });
       const counts = {};
       results.forEach(x => { counts[x.s] = (counts[x.s] || 0) + 1; });
@@ -225,6 +258,7 @@
       const cur = (row[11] || '') + (row[12] || ''), base = (row[15] || '') + (row[16] || '');
       const newText = undo ? base : text, newBase = undo ? ['', ''] : split(base || cur);
       const md = split(newText), pv = split(cur), stamp = now();
+      if (cur && cur !== newText) await keepHistory([[S.siteId, url, row[8] || '', stamp, row[4] || '', pv[0], pv[1]]]);
       row[4] = undo ? 'live fetch' : 'edited by hand' + (name() ? ' (' + name() + ')' : '');
       row[8] = stamp; row[10] = '';
       row[11] = md[0]; row[12] = md[1]; row[13] = pv[0]; row[14] = pv[1]; row[15] = newBase[0]; row[16] = newBase[1];
@@ -419,7 +453,7 @@
         '<button type="button" class="primary" data-lx="reload">Reload</button></div>' + drawError();
     }
     if (!S.sites.length) return drawError() + '<div class="empty">No sites in the “llms sites” tab yet. Add one row per website there, then Reload.</div>';
-    return [drawSites(), drawError(), drawFiles(), drawGet(), drawWeekly(), drawStats(), drawList(), drawNotes()].join('');
+    return [drawSites(), drawError(), drawFiles(), drawGet(), drawWeekly(), drawStats(), drawList(), drawHistory(), drawNotes()].join('');
   }
 
   function drawDiag() {
@@ -640,6 +674,7 @@
         const d = D.compare(p.previous, p.markdown, { text: true, full: false, context: 3, labels: { left: 'Before', right: 'Now' } });
         detail = '<div class="lx-sub">Last change</div>' + (d.error ? '<div class="lx-rerr">' + esc(d.error) + '</div>' : '<div class="lx-diff">' + d.html + '</div>');
       } else detail = '<pre class="lx-pre">' + esc(p.markdown || '(no text saved)') + '</pre>';
+      detail += pageHistory(p);
       if (p.markdown) detail += '<div class="lx-row lx-pe-bar"><button type="button" class="mini" data-lx="page-edit" data-url="' + esc(p.url) + '"' + (b ? ' disabled' : '') + '>Edit text</button>' +
         (p.editBase ? '<button type="button" class="mini" data-lx="page-undo" data-url="' + esc(p.url) + '"' + (b ? ' disabled' : '') + '>Undo my edits</button>' : '') + '</div>';
     }
@@ -651,6 +686,89 @@
       (p.removed ? '' : '<button type="button" class="lx-x" data-lx="remove" data-url="' + esc(p.url) + '" aria-label="Stop tracking ' + esc(pathLabel(p.url)) + '"' + (S.job ? ' disabled' : '') + '>Remove</button>') +
       '</div></div>' + (meta.length ? '<div class="lx-meta">' + esc(meta.join(' · ')) + '</div>' : '') +
       (err ? '<div class="lx-rerr">' + esc(err) + '</div>' : '') + (review ? '<div class="lx-rrev">' + esc(review) + '</div>' : '') + detail + '</div>';
+  }
+
+  // Older versions of one page, compared with each other or with the text now.
+  function pageHistory(p) {
+    const list = S.hist.filter(h => h.site === S.siteId && h.url === p.url).sort((a, b) => b.at.localeCompare(a.at));
+    if (!list.length) return '';
+    const pick = S.histPick[p.url] || { a: list[0].at, b: 'now' };
+    const opt = (sel, includeNow) => (includeNow ? '<option value="now"' + (sel === 'now' ? ' selected' : '') + '>Now (since ' + esc(when(p.lastChanged)) + ')</option>' : '') +
+      list.map(h => '<option value="' + esc(h.at) + '"' + (sel === h.at ? ' selected' : '') + '>Since ' + esc(when(h.since)) + ' → replaced ' + esc(when(h.at)) + (h.from ? ' · ' + esc(h.from) : '') + '</option>').join('');
+    const id = 'lx-h-' + p.row;
+    let h = '<details class="lx-hist"' + (pick.shown ? ' open' : '') + '><summary>History · ' + list.length + ' older version' + (list.length > 1 ? 's' : '') + '</summary><div class="lx-hist-b">' +
+      '<div class="lx-hist-pick"><label for="' + id + 'a">From</label><select id="' + id + 'a" data-hist="a" data-url="' + esc(p.url) + '">' + opt(pick.a, false) + '</select>' +
+      '<label for="' + id + 'b">to</label><select id="' + id + 'b" data-hist="b" data-url="' + esc(p.url) + '">' + opt(pick.b, true) + '</select>' +
+      '<button type="button" class="mini" data-lx="hist-cmp" data-url="' + esc(p.url) + '">Compare</button></div>';
+    if (pick.shown) {
+      const txt = at => at === 'now' ? p.markdown : S.histText[S.siteId + '|' + p.url + '|' + at];
+      const A = txt(pick.a), B = txt(pick.b);
+      if (pick.err) h += '<div class="lx-rerr">' + esc(pick.err) + '</div>';
+      else if (A == null || B == null) h += '<p class="lx-hint">Loading…</p>';
+      else if (A === B) h += '<p class="lx-hint">These two versions are the same.</p>';
+      else { const d = D.compare(A, B, { text: true, full: false, context: 3, labels: { left: 'From', right: 'To' } }); h += d.error ? '<div class="lx-rerr">' + esc(d.error) + '</div>' : '<div class="lx-diff">' + d.html + '</div>'; }
+    }
+    return h + '</div></details>';
+  }
+
+  /* ---------- history card: updates and file versions ---------- */
+
+  const ACTION = { update: 'Checked pages & updated', add: 'Added pages', upload: 'Uploaded pages', remove: 'Removed pages', restore: 'Tracked again',
+    check: 'Weekly check (nothing saved)', 'save-drive': 'Saved both files to Drive' };
+  function drawHistory() {
+    const tabs = '<div class="lx-ways" role="tablist" aria-label="History">' + [['updates', 'Updates'], ['files', 'File versions']].map(t =>
+      '<button type="button" role="tab" data-lx="hist-tab" data-tab="' + t[0] + '" aria-selected="' + (S.histTab === t[0]) + '"' + (S.histTab === t[0] ? ' class="on"' : '') + '>' + t[1] + '</button>').join('') + '</div>';
+    return '<div class="lx-card"><div class="lx-list-h"><h3>History</h3>' + tabs + '</div>' + (S.histTab === 'files' ? drawFileHistory() : drawUpdates()) + '</div>';
+  }
+  function drawUpdates() {
+    const jobs = S.queue.filter(q => q.site === S.siteId && ACTION[q.action] && (q.status === 'Done' || q.status === 'Failed'))
+      .sort((a, b) => (b.finished || b.at).localeCompare(a.finished || a.at));
+    if (!jobs.length) return '<p class="lx-hint">Nothing yet. Every update, upload, weekly check and Drive save will be listed here.</p>';
+    const max = 15 + S.histMore;
+    return '<ul class="lx-hlist">' + jobs.slice(0, max).map(q => {
+      const res = q.result || {}, list = res.results || [], c = {};
+      list.forEach(x => { c[x.s] = (c[x.s] || 0) + 1; });
+      const parts = q.status === 'Failed' ? ['Failed: ' + (res.error || 'unknown error')]
+        : q.action === 'save-drive' ? (res.files || []).map(f => f.name)
+        : ['new', 'changed', 'failed', 'same', 'removed', 'restored'].filter(k => c[k]).map(k => c[k] + ' ' + (PILL[k] ? PILL[k][0].toLowerCase() : k));
+      const open = !!S.histOpen[q.id], canOpen = list.length > 0 || (res.files || []).length > 0;
+      let h = '<li><div class="lx-hrow">' + (canOpen ? '<button type="button" class="lx-tog" data-lx="hist-open" data-id="' + esc(q.id) + '" aria-expanded="' + open + '">' : '<div class="lx-tog lx-tog-static">') +
+        '<span class="lx-hwhen">' + esc(when(q.finished || q.at)) + '</span><span class="lx-hwhat">' + esc(ACTION[q.action]) + (q.by ? ' · ' + esc(q.by) : '') + '</span>' +
+        '<span class="lx-hsum">' + esc(parts.join(', ') || 'No changes') + (res.trimmed ? ' (unchanged pages not listed)' : '') + '</span>' + (canOpen ? '</button>' : '</div>') + '</div>';
+      if (open) {
+        h += q.action === 'save-drive'
+          ? '<ul class="lx-hpages">' + (res.files || []).map(f => '<li><a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a></li>').join('') + '</ul>'
+          : '<ul class="lx-hpages">' + list.filter(x => x.s !== 'same').concat(list.filter(x => x.s === 'same')).map(x =>
+            '<li>' + pill(x.s) + '<span class="lx-path">' + esc(pathLabel(x.u)) + '</span>' + (x.e ? '<span class="lx-herr">' + esc(x.e) + '</span>' : '') + '</li>').join('') + '</ul>';
+      }
+      return h + '</li>';
+    }).join('') + '</ul>' + (jobs.length > max ? '<button type="button" class="mini" data-lx="hist-more">Show ' + Math.min(30, jobs.length - max) + ' more</button>' : '');
+  }
+  // Every saved version of a file: yours, and exactly what went to Drive (the developer).
+  function fileVersions(f) {
+    const out = [{ id: 'now', label: 'Now: ' + (output(f).mode === 'generated' ? 'generated from the pages' : 'your version + page updates'), text: output(f).text }];
+    S.exports.filter(v => v.site === S.siteId && v.file === f).forEach(v => out.push({ id: 'x:' + v.version, at: v.savedAt, label: 'Sent to Drive · ' + when(v.savedAt) + (v.by ? ' · ' + v.by : ''), text: v.text }));
+    S.versions.filter(v => v.site === S.siteId && v.file === f).forEach(v => out.push(v.reset
+      ? { id: 'r:' + v.version, at: v.savedAt, label: 'Stopped following your version · ' + when(v.savedAt) + (v.by ? ' · ' + v.by : ''), text: null }
+      : { id: 'm:' + v.version, at: v.savedAt, label: 'Your version saved · ' + when(v.savedAt) + (v.by ? ' · ' + v.by : ''), text: v.mine }));
+    return [out[0]].concat(out.slice(1).sort((a, b) => b.at.localeCompare(a.at)));
+  }
+  function drawFileHistory() {
+    const f = S.fileCmp.file || 'llms-full.txt';
+    const vs = fileVersions(f), cmp = vs.filter(v => v.text != null);
+    const lastSent = vs.find(v => v.id.indexOf('x:') === 0);
+    const a = S.fileCmp.a && cmp.some(v => v.id === S.fileCmp.a) ? S.fileCmp.a : (lastSent ? lastSent.id : (cmp[1] || cmp[0]).id);
+    const b = S.fileCmp.b && cmp.some(v => v.id === S.fileCmp.b) ? S.fileCmp.b : 'now';
+    const sel = (id, cur) => '<select id="' + id + '">' + cmp.map(v => '<option value="' + esc(v.id) + '"' + (v.id === cur ? ' selected' : '') + '>' + esc(v.label) + '</option>').join('') + '</select>';
+    let h = '<div class="lx-hist-pick"><label for="lx-hf">File</label><select id="lx-hf">' + ['llms.txt', 'llms-full.txt'].map(x => '<option' + (x === f ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div>' +
+      '<ul class="lx-hlist">' + vs.slice(1).map(v => '<li><div class="lx-hrow"><div class="lx-tog lx-tog-static"><span class="lx-hwhat">' + esc(v.label) + '</span></div></div></li>').join('') + '</ul>';
+    if (vs.length < 2) return h + '<p class="lx-hint">No saved versions yet. Versions appear when you save your own version or press Save both to Drive.</p>';
+    h += '<div class="lx-hist-pick"><label for="lx-hfa">Compare</label>' + sel('lx-hfa', a) + '<label for="lx-hfb">with</label>' + sel('lx-hfb', b) + '</div>' +
+      (lastSent && a === lastSent.id && b === 'now' ? '<p class="lx-hint">Showing what changed since the last files sent to Drive (the developer’s copy).</p>' : '');
+    const A = cmp.find(v => v.id === a).text, B = cmp.find(v => v.id === b).text;
+    if (A === B) return h + '<p class="lx-hint">These two versions are the same.</p>';
+    const d = D.compare(A, B, { text: true, full: false, context: 3, labels: { left: (cmp.find(v => v.id === a).label), right: (cmp.find(v => v.id === b).label) } });
+    return h + (d.error ? '<div class="lx-rerr">' + esc(d.error) + '</div>' : '<div class="lx-diff">' + d.html + '</div>');
   }
 
   function drawNotes() {
@@ -713,6 +831,16 @@
       p[i] = p[i] !== undefined && p[i] !== false ? false : true; draw();
     }
     else if (act === 'toggle') { S.open[url] = !S.open[url]; draw(); }
+    else if (act === 'hist-tab') { S.histTab = t.dataset.tab; draw(); }
+    else if (act === 'hist-open') { S.histOpen[t.dataset.id] = !S.histOpen[t.dataset.id]; draw(); }
+    else if (act === 'hist-more') { S.histMore += 30; draw(); }
+    else if (act === 'hist-cmp') {
+      const box = t.closest('.lx-hist-b'), pick = S.histPick[url] = S.histPick[url] || {};
+      pick.a = box.querySelector('[data-hist="a"]').value; pick.b = box.querySelector('[data-hist="b"]').value;
+      pick.shown = true; pick.err = ''; draw();
+      const list = S.hist.filter(h => h.site === S.siteId && h.url === url && (h.at === pick.a || h.at === pick.b));
+      histTexts(list).catch(er => { pick.err = 'Couldn’t load that version: ' + er.message; }).then(draw);
+    }
     else if (act === 'page-edit') { S.pageEdit = url; draw(); const ta = $('llms').querySelector('.lx-r .lx-edit-ta'); if (ta) ta.focus(); }
     else if (act === 'page-cancel') { S.pageEdit = null; draw(); }
     else if (act === 'page-save') {
@@ -750,6 +878,9 @@
     const t = e.target;
     if (t.id === 'lx-file') { readFiles(t.files); t.value = ''; return; }
     if (t.id === 'lx-name') { store.set('llms-name', t.value.trim()); return; }
+    if (t.dataset.hist) { const p = S.histPick[t.dataset.url] || (S.histPick[t.dataset.url] = {}); p[t.dataset.hist] = t.value; return; }
+    if (t.id === 'lx-hf') { S.fileCmp = { file: t.value }; draw(); return; }
+    if (t.id === 'lx-hfa' || t.id === 'lx-hfb') { S.fileCmp[t.id === 'lx-hfa' ? 'a' : 'b'] = t.value; S.fileCmp.file = S.fileCmp.file || 'llms-full.txt'; draw(); return; }
     if (t.dataset.inc) { const u = S.uploads.find(x => x.key === t.dataset.inc); if (u) u.include = t.checked; draw(); return; }
     if (t.dataset.urlFor) {
       const u = S.uploads.find(x => x.key === t.dataset.urlFor);
